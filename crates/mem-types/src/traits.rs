@@ -1,9 +1,9 @@
 //! Traits for MemCube and storage backends.
 
 use crate::{
-    ApiAddRequest, ApiSearchRequest, ForgetMemoryRequest, ForgetMemoryResponse, GetMemoryRequest,
-    GetMemoryResponse, MemoryNode, MemoryResponse, SearchResponse, UpdateMemoryRequest,
-    UpdateMemoryResponse,
+    ApiAddRequest, ApiSearchRequest, AuditEvent, AuditListOptions, ForgetMemoryRequest,
+    ForgetMemoryResponse, GetMemoryRequest, GetMemoryResponse, MemoryNode, MemoryResponse,
+    SearchResponse, UpdateMemoryRequest, UpdateMemoryResponse,
 };
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -72,8 +72,13 @@ pub trait GraphStore: Send + Sync {
         user_name: Option<&str>,
     ) -> Result<(), GraphStoreError>;
 
-    /// Delete a node (hard delete; removes from graph and scope index).
-    async fn delete_node(&self, id: &str) -> Result<(), GraphStoreError>;
+    /// Delete a node (hard delete). If `user_name` is `Some`, implementation must verify
+    /// the node belongs to that user/cube (e.g. via metadata) before deleting; return error if not owner.
+    async fn delete_node(
+        &self,
+        id: &str,
+        user_name: Option<&str>,
+    ) -> Result<(), GraphStoreError>;
 }
 
 /// Vector store abstraction (subset of MemOS BaseVecDB).
@@ -104,6 +109,13 @@ pub trait VecStore: Send + Sync {
 
     /// Delete by ids.
     async fn delete(&self, ids: &[String], collection: Option<&str>) -> Result<(), VecStoreError>;
+
+    /// Upsert items: insert or replace by id. Ensures full payload and avoids delete+add window.
+    async fn upsert(
+        &self,
+        items: &[VecStoreItem],
+        collection: Option<&str>,
+    ) -> Result<(), VecStoreError>;
 }
 
 /// Item for vector store (id, vector, payload).
@@ -172,10 +184,31 @@ pub enum EmbedderError {
     EmptyResponse,
 }
 
+/// Audit event store: append-only log with optional list by user/cube/time and pagination.
+#[async_trait]
+pub trait AuditStore: Send + Sync {
+    /// Append one audit event.
+    async fn append(&self, event: AuditEvent) -> Result<(), AuditStoreError>;
+
+    /// List events with optional filters and limit/offset. Newest first.
+    async fn list(
+        &self,
+        opts: &AuditListOptions,
+    ) -> Result<Vec<AuditEvent>, AuditStoreError>;
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AuditStoreError {
+    #[error("audit store error: {0}")]
+    Other(String),
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum MemCubeError {
     #[error("mem cube error: {0}")]
     Other(String),
+    #[error("not found: {0}")]
+    NotFound(String),
     #[error("embedder: {0}")]
     Embedder(#[from] EmbedderError),
     #[error("graph: {0}")]

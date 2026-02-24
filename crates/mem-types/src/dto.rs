@@ -202,6 +202,9 @@ pub struct GetMemoryRequest {
     pub user_id: String,
     #[serde(default)]
     pub mem_cube_id: Option<String>,
+    /// If true, return memories marked tombstone (soft-deleted). Default false.
+    #[serde(default)]
+    pub include_deleted: bool,
 }
 
 /// Response for get_memory: optional MemoryItem.

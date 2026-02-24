@@ -223,4 +223,37 @@ impl VecStore for QdrantVecStore {
             .map_err(|e| VecStoreError::Other(e.to_string()))?;
         Ok(())
     }
+
+    async fn upsert(
+        &self,
+        items: &[VecStoreItem],
+        collection: Option<&str>,
+    ) -> Result<(), VecStoreError> {
+        let coll = self.collection(collection);
+        let size = items
+            .first()
+            .map(|i| i.vector.len() as u64)
+            .unwrap_or(VECTOR_SIZE);
+        self.ensure_collection(size).await?;
+        let points: Vec<PointStruct> = items
+            .iter()
+            .map(|i| {
+                let payload_json = serde_json::Value::Object(
+                    i.payload
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect(),
+                );
+                let payload = Payload::try_from(payload_json).unwrap_or_default();
+                PointStruct::new(i.id.as_str(), i.vector.clone(), payload)
+            })
+            .collect();
+        self.client
+            .upsert_points(
+                UpsertPointsBuilder::new(coll, points).wait(true),
+            )
+            .await
+            .map_err(|e| VecStoreError::Other(e.to_string()))?;
+        Ok(())
+    }
 }

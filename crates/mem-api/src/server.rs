@@ -8,21 +8,130 @@ use axum::{
 use mem_scheduler::Scheduler;
 use mem_types::MemCube;
 use mem_types::{
-    ApiAddRequest, ApiSearchRequest, AuditEvent, AuditEventKind, ForgetMemoryRequest,
-    ForgetMemoryResponse, GetMemoryRequest, GetMemoryResponse, MemoryResponse, SearchResponse,
-    SchedulerStatusResponse, UpdateMemoryRequest, UpdateMemoryResponse,
+    ApiAddRequest, ApiSearchRequest, AuditEvent, AuditEventKind, AuditListOptions, AuditStore,
+    ForgetMemoryRequest, ForgetMemoryResponse, GetMemoryRequest, GetMemoryResponse, MemoryResponse,
+    MemCubeError, SearchResponse, SchedulerStatusResponse, UpdateMemoryRequest, UpdateMemoryResponse,
 };
 use serde::Deserialize;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::io::AsyncWriteExt;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
+
+/// In-memory implementation of AuditStore (process lifetime only).
+pub struct InMemoryAuditStore {
+    events: tokio::sync::RwLock<Vec<AuditEvent>>,
+}
+
+impl InMemoryAuditStore {
+    pub fn new() -> Self {
+        Self {
+            events: tokio::sync::RwLock::new(Vec::new()),
+        }
+    }
+}
+
+impl Default for InMemoryAuditStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl AuditStore for InMemoryAuditStore {
+    async fn append(&self, event: AuditEvent) -> Result<(), mem_types::AuditStoreError> {
+        self.events.write().await.push(event);
+        Ok(())
+    }
+
+    async fn list(
+        &self,
+        opts: &AuditListOptions,
+    ) -> Result<Vec<AuditEvent>, mem_types::AuditStoreError> {
+        let guard = self.events.read().await;
+        let mut out: Vec<AuditEvent> = guard.iter().cloned().collect();
+        apply_audit_list_opts(&mut out, opts);
+        Ok(out)
+    }
+}
+
+/// JSONL file-backed AuditStore (persists across restarts).
+pub struct JsonlAuditStore {
+    path: std::path::PathBuf,
+    append_lock: tokio::sync::Mutex<()>,
+}
+
+impl JsonlAuditStore {
+    pub fn new(path: impl AsRef<std::path::Path>) -> Self {
+        Self {
+            path: path.as_ref().to_path_buf(),
+            append_lock: tokio::sync::Mutex::new(()),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl AuditStore for JsonlAuditStore {
+    async fn append(&self, event: AuditEvent) -> Result<(), mem_types::AuditStoreError> {
+        let _guard = self.append_lock.lock().await;
+        let line = serde_json::to_string(&event).map_err(|e| mem_types::AuditStoreError::Other(e.to_string()))?;
+        let mut f = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .await
+            .map_err(|e| mem_types::AuditStoreError::Other(e.to_string()))?;
+        f.write_all(format!("{}\n", line).as_bytes())
+            .await
+            .map_err(|e| mem_types::AuditStoreError::Other(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn list(
+        &self,
+        opts: &AuditListOptions,
+    ) -> Result<Vec<AuditEvent>, mem_types::AuditStoreError> {
+        let content = match tokio::fs::read_to_string(&self.path).await {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(mem_types::AuditStoreError::Other(e.to_string())),
+        };
+        let mut out: Vec<AuditEvent> = Vec::new();
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Ok(ev) = serde_json::from_str(line) {
+                out.push(ev);
+            }
+        }
+        apply_audit_list_opts(&mut out, opts);
+        Ok(out)
+    }
+}
+
+fn apply_audit_list_opts(out: &mut Vec<AuditEvent>, opts: &AuditListOptions) {
+    if let Some(ref uid) = opts.user_id {
+        out.retain(|e| &e.user_id == uid);
+    }
+    if let Some(ref cid) = opts.cube_id {
+        out.retain(|e| &e.cube_id == cid);
+    }
+    if let Some(ref since) = opts.since {
+        out.retain(|e| e.timestamp.as_str() >= since.as_str());
+    }
+    out.reverse();
+    let offset = opts.offset.unwrap_or(0) as usize;
+    let limit = opts.limit.unwrap_or(100) as usize;
+    let taken: Vec<AuditEvent> = std::mem::take(out).into_iter().skip(offset).take(limit).collect();
+    *out = taken;
+}
 
 pub struct AppState {
     pub cube: Arc<dyn MemCube + Send + Sync>,
     pub scheduler: Arc<dyn Scheduler + Send + Sync>,
-    /// In-memory audit log (add/update/forget events).
-    pub audit_log: Arc<RwLock<Vec<AuditEvent>>>,
+    pub audit_log: Arc<dyn AuditStore + Send + Sync>,
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
@@ -33,13 +142,14 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/product/update_memory", post(handle_update_memory))
         .route("/product/delete_memory", post(handle_delete_memory))
         .route("/product/get_memory", post(handle_get_memory))
+        .route("/product/audit/list", get(handle_audit_list))
         .route("/health", get(handle_health))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
 
 async fn push_audit(state: &AppState, event: AuditEvent) {
-    state.audit_log.write().await.push(event);
+    let _ = state.audit_log.append(event).await;
 }
 
 async fn handle_add(
@@ -179,6 +289,11 @@ async fn handle_update_memory(
             .await;
             Json(res)
         }
+        Err(MemCubeError::NotFound(msg)) => Json(UpdateMemoryResponse {
+            code: 404,
+            message: msg,
+            data: None,
+        }),
         Err(e) => Json(UpdateMemoryResponse {
             code: 500,
             message: e.to_string(),
@@ -212,6 +327,11 @@ async fn handle_delete_memory(
             .await;
             Json(res)
         }
+        Err(MemCubeError::NotFound(msg)) => Json(ForgetMemoryResponse {
+            code: 404,
+            message: msg,
+            data: None,
+        }),
         Err(e) => Json(ForgetMemoryResponse {
             code: 500,
             message: e.to_string(),
@@ -232,6 +352,53 @@ async fn handle_get_memory(
             data: None,
         }),
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuditListQuery {
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub cube_id: Option<String>,
+    #[serde(default)]
+    pub since: Option<String>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default)]
+    pub offset: Option<u32>,
+}
+
+async fn handle_audit_list(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<AuditListQuery>,
+) -> Json<AuditListResponse> {
+    let opts = AuditListOptions {
+        user_id: q.user_id,
+        cube_id: q.cube_id,
+        since: q.since,
+        limit: q.limit,
+        offset: q.offset,
+    };
+    match state.audit_log.list(&opts).await {
+        Ok(events) => Json(AuditListResponse {
+            code: 200,
+            message: "Success".to_string(),
+            data: Some(events),
+        }),
+        Err(e) => Json(AuditListResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct AuditListResponse {
+    pub code: i32,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Vec<AuditEvent>>,
 }
 
 async fn handle_health() -> &'static str {

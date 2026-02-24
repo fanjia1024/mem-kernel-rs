@@ -12,11 +12,14 @@ pub enum SchedulerError {
 }
 
 /// Scheduler for async add: submit returns job_id, status can be polled.
+///
+/// Contract: `get_status` returns `Ok(None)` when the job_id is unknown (e.g. not yet created or
+/// evicted). The API layer should map `Ok(None)` to HTTP 404 for consistent semantics.
 #[async_trait]
 pub trait Scheduler: Send + Sync {
     /// Submit an add request; returns job_id. When async, the actual add runs in a worker.
     async fn submit_add(&self, req: ApiAddRequest) -> Result<String, SchedulerError>;
 
-    /// Get current job status by job_id (task_id).
+    /// Get current job status by job_id (task_id). Returns `Ok(None)` if job not found.
     async fn get_status(&self, job_id: &str) -> Result<Option<Job>, SchedulerError>;
 }

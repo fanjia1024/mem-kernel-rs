@@ -54,3 +54,14 @@ pub struct AuditEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
 }
+
+/// Options for listing audit events (filter + pagination).
+#[derive(Debug, Clone, Default)]
+pub struct AuditListOptions {
+    pub user_id: Option<String>,
+    pub cube_id: Option<String>,
+    /// ISO8601 timestamp; return events with timestamp >= since.
+    pub since: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}

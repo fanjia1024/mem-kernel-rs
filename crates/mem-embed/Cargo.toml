@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "OpenAI-compatible embedding client for MemOS"
 
+[features]
+test-util = []
+
 [dependencies]
 mem-types = { path = "../mem-types" }
 async-trait = "0.1"

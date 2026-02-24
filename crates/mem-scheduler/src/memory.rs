@@ -2,7 +2,7 @@
 
 use crate::{Scheduler, SchedulerError};
 use async_trait::async_trait;
-use mem_types::{ApiAddRequest, AuditEvent, AuditEventKind, Job, JobStatus};
+use mem_types::{ApiAddRequest, AuditEvent, AuditEventKind, AuditStore, Job, JobStatus};
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,16 +21,16 @@ pub struct InMemoryScheduler {
 
 impl InMemoryScheduler {
     /// Create scheduler and spawn worker. Worker runs on the given MemCube.
-    /// If `audit_log` is provided, an AuditEvent(Add) is pushed when an add job completes successfully.
+    /// If `audit_store` is provided, an AuditEvent(Add) is appended when an add job completes successfully.
     pub fn new(
         cube: Arc<dyn mem_types::MemCube + Send + Sync>,
-        audit_log: Option<Arc<RwLock<Vec<AuditEvent>>>>,
+        audit_store: Option<Arc<dyn AuditStore + Send + Sync>>,
     ) -> Self {
         let jobs: Arc<RwLock<HashMap<String, JobState>>> = Arc::new(RwLock::new(HashMap::new()));
         let (tx, mut rx) = mpsc::unbounded_channel::<(String, ApiAddRequest)>();
 
         let jobs_clone = Arc::clone(&jobs);
-        let audit_log = audit_log.clone();
+        let audit_store = audit_store.clone();
         tokio::spawn(async move {
             while let Some((job_id, req)) = rx.recv().await {
                 let now = Utc::now().to_rfc3339();
@@ -54,7 +54,7 @@ impl InMemoryScheduler {
                     ),
                 };
                 if let Ok(ref res) = result {
-                    if let Some(ref log) = audit_log {
+                    if let Some(ref store) = audit_store {
                         let cube_ids = req.writable_cube_ids();
                         let memory_id = res
                             .data
@@ -73,7 +73,7 @@ impl InMemoryScheduler {
                             input_summary: None,
                             outcome: Some(format!("code={}", res.code)),
                         };
-                        log.write().await.push(event);
+                        let _ = store.append(event).await;
                     }
                 }
                 let mut guard = jobs_clone.write().await;

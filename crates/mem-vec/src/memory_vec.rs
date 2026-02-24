@@ -131,4 +131,18 @@ impl VecStore for InMemoryVecStore {
         }
         Ok(())
     }
+
+    async fn upsert(
+        &self,
+        items: &[VecStoreItem],
+        collection: Option<&str>,
+    ) -> Result<(), VecStoreError> {
+        let coll = self.coll(collection);
+        let mut guard = self.store.write().await;
+        let map = guard.entry(coll).or_default();
+        for item in items {
+            map.insert(item.id.clone(), item.clone());
+        }
+        Ok(())
+    }
 }

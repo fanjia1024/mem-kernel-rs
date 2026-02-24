@@ -41,15 +41,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             ))
         };
 
-    let audit_log = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+    let audit_store: Arc<dyn mem_types::AuditStore + Send + Sync> =
+        if let Ok(path) = std::env::var("AUDIT_LOG_PATH") {
+            tracing::info!("Using JSONL audit log at {}", path);
+            Arc::new(server::JsonlAuditStore::new(path))
+        } else {
+            tracing::info!("Using in-memory audit log (set AUDIT_LOG_PATH for persistence)");
+            Arc::new(server::InMemoryAuditStore::new())
+        };
     let scheduler = Arc::new(InMemoryScheduler::new(
         Arc::clone(&cube),
-        Some(Arc::clone(&audit_log)),
+        Some(Arc::clone(&audit_store)),
     ));
     let state = Arc::new(server::AppState {
         cube,
         scheduler,
-        audit_log,
+        audit_log: audit_store,
     });
     let app = server::router(state);
     let addr: SocketAddr = std::env::var("MEMOS_LISTEN")

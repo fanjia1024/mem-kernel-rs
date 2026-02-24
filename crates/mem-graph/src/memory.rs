@@ -185,12 +185,25 @@ impl GraphStore for InMemoryGraphStore {
         &self,
         id: &str,
         fields: &HashMap<String, serde_json::Value>,
-        _user_name: Option<&str>,
+        user_name: Option<&str>,
     ) -> Result<(), GraphStoreError> {
         let mut guard = self.nodes.write().await;
         let node = guard
             .get_mut(id)
             .ok_or_else(|| GraphStoreError::Other(format!("node not found: {}", id)))?;
+        if let Some(un) = user_name {
+            let node_owner = node
+                .metadata
+                .get("user_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if node_owner != un {
+                return Err(GraphStoreError::Other(format!(
+                    "node not found or access denied: {}",
+                    id
+                )));
+            }
+        }
         for (k, v) in fields {
             if k == "memory" {
                 node.memory = v.as_str().unwrap_or("").to_string();
@@ -201,7 +214,30 @@ impl GraphStore for InMemoryGraphStore {
         Ok(())
     }
 
-    async fn delete_node(&self, id: &str) -> Result<(), GraphStoreError> {
+    async fn delete_node(
+        &self,
+        id: &str,
+        user_name: Option<&str>,
+    ) -> Result<(), GraphStoreError> {
+        {
+            let nodes = self.nodes.read().await;
+            let node = nodes
+                .get(id)
+                .ok_or_else(|| GraphStoreError::Other(format!("node not found: {}", id)))?;
+            if let Some(un) = user_name {
+                let node_owner = node
+                    .metadata
+                    .get("user_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if node_owner != un {
+                    return Err(GraphStoreError::Other(format!(
+                        "node not found or access denied: {}",
+                        id
+                    )));
+                }
+            }
+        }
         let mut nodes = self.nodes.write().await;
         nodes.remove(id).ok_or_else(|| {
             GraphStoreError::Other(format!("node not found: {}", id))
