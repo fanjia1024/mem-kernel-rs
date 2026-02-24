@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mem-types",
+    "crates/mem-graph",
+    "crates/mem-vec",
+    "crates/mem-embed",
+    "crates/mem-cube",
+    "crates/mem-api",
+]
