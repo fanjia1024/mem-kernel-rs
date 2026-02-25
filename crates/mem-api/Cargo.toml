@@ -3,6 +3,7 @@ name = "mem-api"
 version = "0.1.0"
 edition = "2021"
 description = "REST API (Axum) for MemOS: /product/add, /product/search"
+license = "Apache-2.0"
 
 [[bin]]
 name = "mem-api"

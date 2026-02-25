@@ -3,6 +3,7 @@ name = "mem-embed"
 version = "0.1.0"
 edition = "2021"
 description = "OpenAI-compatible embedding client for MemOS"
+license = "Apache-2.0"
 
 [features]
 test-util = []

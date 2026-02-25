@@ -3,6 +3,7 @@ name = "mem-types"
 version = "0.1.0"
 edition = "2021"
 description = "Core types, DTOs, and MemCube traits for MemOS-compatible memory API"
+license = "Apache-2.0"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

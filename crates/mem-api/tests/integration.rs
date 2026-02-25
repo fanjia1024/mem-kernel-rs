@@ -53,9 +53,15 @@ async fn add_sync_then_search() {
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(j["code"], 200);
-    let id = j["data"].as_array().and_then(|a| a.first()).and_then(|d| d.get("id")).and_then(|v| v.as_str()).unwrap();
+    let id = j["data"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap();
 
-    let search_body = json!({ "query": "What do I like?", "user_id": "user1", "mem_cube_id": "user1" });
+    let search_body =
+        json!({ "query": "What do I like?", "user_id": "user1", "mem_cube_id": "user1" });
     let req = Request::builder()
         .method("POST")
         .uri("/product/search")
@@ -90,12 +96,20 @@ async fn add_async_then_status_then_search() {
     assert_eq!(res.status(), StatusCode::OK);
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let task_id = j["data"].as_array().and_then(|a| a.first()).and_then(|d| d.get("task_id")).and_then(|v| v.as_str()).unwrap();
+    let task_id = j["data"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|d| d.get("task_id"))
+        .and_then(|v| v.as_str())
+        .unwrap();
 
     for _ in 0..50 {
         let req = Request::builder()
             .method("GET")
-            .uri(format!("/product/scheduler/status?user_id=u2&task_id={}", task_id))
+            .uri(format!(
+                "/product/scheduler/status?user_id=u2&task_id={}",
+                task_id
+            ))
             .body(Body::empty())
             .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
@@ -112,7 +126,10 @@ async fn add_async_then_status_then_search() {
     }
     let req = Request::builder()
         .method("GET")
-        .uri(format!("/product/scheduler/status?user_id=u2&task_id={}", task_id))
+        .uri(format!(
+            "/product/scheduler/status?user_id=u2&task_id={}",
+            task_id
+        ))
         .body(Body::empty())
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
@@ -154,7 +171,13 @@ async fn update_memory_then_search() {
     let res = app.clone().oneshot(req).await.unwrap();
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let id = j["data"].as_array().and_then(|a| a.first()).and_then(|d| d.get("id")).and_then(|v| v.as_str()).unwrap().to_string();
+    let id = j["data"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
 
     let update_body = json!({
         "memory_id": id,
@@ -202,7 +225,13 @@ async fn forget_soft_then_search_misses_get_with_include_deleted() {
     let res = app.clone().oneshot(req).await.unwrap();
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let id = j["data"].as_array().and_then(|a| a.first()).and_then(|d| d.get("id")).and_then(|v| v.as_str()).unwrap().to_string();
+    let id = j["data"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
 
     let del_body = json!({ "memory_id": id, "user_id": "u4", "soft": true });
     let req = Request::builder()
@@ -270,7 +299,13 @@ async fn forget_hard_then_get_404() {
     let res = app.clone().oneshot(req).await.unwrap();
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let id = j["data"].as_array().and_then(|a| a.first()).and_then(|d| d.get("id")).and_then(|v| v.as_str()).unwrap().to_string();
+    let id = j["data"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
 
     let del_body = json!({ "memory_id": id, "user_id": "u5", "soft": false });
     let req = Request::builder()
@@ -339,7 +374,13 @@ async fn multi_user_isolation() {
     let res = app.clone().oneshot(req).await.unwrap();
     let body = res.into_body().collect().await.unwrap().to_bytes();
     let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    let id_a = j["data"].as_array().and_then(|a| a.first()).and_then(|d| d.get("id")).and_then(|v| v.as_str()).unwrap().to_string();
+    let id_a = j["data"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|d| d.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
 
     let add_b = json!({ "user_id": "bob", "mem_cube_id": "bob", "memory_content": "Bob secret", "async_mode": "sync" });
     let req = Request::builder()

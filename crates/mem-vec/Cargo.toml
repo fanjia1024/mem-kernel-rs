@@ -3,6 +3,7 @@ name = "mem-vec"
 version = "0.1.0"
 edition = "2021"
 description = "Vector store trait and Qdrant implementation for MemOS"
+license = "Apache-2.0"
 
 [features]
 default = []

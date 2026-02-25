@@ -9,7 +9,11 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
-    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| (*x as f64) * (*y as f64)).sum();
+    let dot: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| (*x as f64) * (*y as f64))
+        .sum();
     let na: f64 = a.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
     let nb: f64 = b.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
     if na == 0.0 || nb == 0.0 {
@@ -29,16 +33,12 @@ impl InMemoryVecStore {
     pub fn new(default_collection: Option<&str>) -> Self {
         Self {
             store: Arc::new(RwLock::new(HashMap::new())),
-            default_collection: default_collection
-                .unwrap_or("memos_memories")
-                .to_string(),
+            default_collection: default_collection.unwrap_or("memos_memories").to_string(),
         }
     }
 
     fn coll(&self, collection: Option<&str>) -> String {
-        collection
-            .unwrap_or(&self.default_collection)
-            .to_string()
+        collection.unwrap_or(&self.default_collection).to_string()
     }
 }
 
@@ -67,7 +67,9 @@ impl VecStore for InMemoryVecStore {
     ) -> Result<Vec<VecSearchHit>, VecStoreError> {
         let coll = self.coll(collection);
         let guard = self.store.read().await;
-        let map = guard.get(&coll).map(|m| m.values().cloned().collect::<Vec<_>>());
+        let map = guard
+            .get(&coll)
+            .map(|m| m.values().cloned().collect::<Vec<_>>());
         let items = map.unwrap_or_default();
         let mut candidates: Vec<(VecStoreItem, f64)> = items
             .into_iter()
@@ -94,10 +96,7 @@ impl VecStore for InMemoryVecStore {
         let hits = candidates
             .into_iter()
             .take(top_k)
-            .map(|(i, score)| VecSearchHit {
-                id: i.id,
-                score,
-            })
+            .map(|(i, score)| VecSearchHit { id: i.id, score })
             .collect();
         Ok(hits)
     }

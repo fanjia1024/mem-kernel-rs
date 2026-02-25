@@ -19,27 +19,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let cube: Arc<dyn mem_types::MemCube + Send + Sync> =
-        if let Ok(url) = std::env::var("QDRANT_URL") {
-            let store = QdrantVecStore::new(
-                &url,
-                std::env::var("QDRANT_COLLECTION").ok().as_deref(),
-            )
+    let cube: Arc<dyn mem_types::MemCube + Send + Sync> = if let Ok(url) =
+        std::env::var("QDRANT_URL")
+    {
+        let store = QdrantVecStore::new(&url, std::env::var("QDRANT_COLLECTION").ok().as_deref())
             .map_err(|e| format!("QdrantVecStore: {}", e))?;
-            tracing::info!("Using Qdrant vector store at {}", url);
-            Arc::new(NaiveMemCube::new(
-                InMemoryGraphStore::new(),
-                store,
-                OpenAiEmbedder::from_env(),
-            ))
-        } else {
-            tracing::info!("Using in-memory vector store (set QDRANT_URL for Qdrant)");
-            Arc::new(NaiveMemCube::new(
-                InMemoryGraphStore::new(),
-                InMemoryVecStore::new(None),
-                OpenAiEmbedder::from_env(),
-            ))
-        };
+        tracing::info!("Using Qdrant vector store at {}", url);
+        Arc::new(NaiveMemCube::new(
+            InMemoryGraphStore::new(),
+            store,
+            OpenAiEmbedder::from_env(),
+        ))
+    } else {
+        tracing::info!("Using in-memory vector store (set QDRANT_URL for Qdrant)");
+        Arc::new(NaiveMemCube::new(
+            InMemoryGraphStore::new(),
+            InMemoryVecStore::new(None),
+            OpenAiEmbedder::from_env(),
+        ))
+    };
 
     let audit_store: Arc<dyn mem_types::AuditStore + Send + Sync> =
         if let Ok(path) = std::env::var("AUDIT_LOG_PATH") {

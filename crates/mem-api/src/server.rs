@@ -9,8 +9,9 @@ use mem_scheduler::Scheduler;
 use mem_types::MemCube;
 use mem_types::{
     ApiAddRequest, ApiSearchRequest, AuditEvent, AuditEventKind, AuditListOptions, AuditStore,
-    ForgetMemoryRequest, ForgetMemoryResponse, GetMemoryRequest, GetMemoryResponse, MemoryResponse,
-    MemCubeError, SearchResponse, SchedulerStatusResponse, UpdateMemoryRequest, UpdateMemoryResponse,
+    ForgetMemoryRequest, ForgetMemoryResponse, GetMemoryRequest, GetMemoryResponse, MemCubeError,
+    MemoryResponse, SchedulerStatusResponse, SearchResponse, UpdateMemoryRequest,
+    UpdateMemoryResponse,
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -74,7 +75,8 @@ impl JsonlAuditStore {
 impl AuditStore for JsonlAuditStore {
     async fn append(&self, event: AuditEvent) -> Result<(), mem_types::AuditStoreError> {
         let _guard = self.append_lock.lock().await;
-        let line = serde_json::to_string(&event).map_err(|e| mem_types::AuditStoreError::Other(e.to_string()))?;
+        let line = serde_json::to_string(&event)
+            .map_err(|e| mem_types::AuditStoreError::Other(e.to_string()))?;
         let mut f = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -124,7 +126,11 @@ fn apply_audit_list_opts(out: &mut Vec<AuditEvent>, opts: &AuditListOptions) {
     out.reverse();
     let offset = opts.offset.unwrap_or(0) as usize;
     let limit = opts.limit.unwrap_or(100) as usize;
-    let taken: Vec<AuditEvent> = std::mem::take(out).into_iter().skip(offset).take(limit).collect();
+    let taken: Vec<AuditEvent> = std::mem::take(out)
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect();
     *out = taken;
 }
 
@@ -269,7 +275,10 @@ async fn handle_update_memory(
     Json(req): Json<UpdateMemoryRequest>,
 ) -> Json<UpdateMemoryResponse> {
     let user_id = req.user_id.clone();
-    let cube_id = req.mem_cube_id.clone().unwrap_or_else(|| req.user_id.clone());
+    let cube_id = req
+        .mem_cube_id
+        .clone()
+        .unwrap_or_else(|| req.user_id.clone());
     let memory_id = req.memory_id.clone();
     match state.cube.update_memory(&req).await {
         Ok(res) => {
@@ -307,7 +316,10 @@ async fn handle_delete_memory(
     Json(req): Json<ForgetMemoryRequest>,
 ) -> Json<ForgetMemoryResponse> {
     let user_id = req.user_id.clone();
-    let cube_id = req.mem_cube_id.clone().unwrap_or_else(|| req.user_id.clone());
+    let cube_id = req
+        .mem_cube_id
+        .clone()
+        .unwrap_or_else(|| req.user_id.clone());
     let memory_id = req.memory_id.clone();
     match state.cube.forget_memory(&req).await {
         Ok(res) => {

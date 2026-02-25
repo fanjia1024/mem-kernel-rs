@@ -1,11 +1,11 @@
 //! OpenAI-compatible embedding client.
 
-mod openai;
 #[cfg(feature = "test-util")]
 pub mod mock;
+mod openai;
 
-pub use openai::OpenAiEmbedder;
 pub use mem_types::{Embedder, EmbedderError};
+pub use openai::OpenAiEmbedder;
 
 #[cfg(feature = "test-util")]
 pub use mock::MockEmbedder;

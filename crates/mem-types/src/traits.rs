@@ -74,11 +74,7 @@ pub trait GraphStore: Send + Sync {
 
     /// Delete a node (hard delete). If `user_name` is `Some`, implementation must verify
     /// the node belongs to that user/cube (e.g. via metadata) before deleting; return error if not owner.
-    async fn delete_node(
-        &self,
-        id: &str,
-        user_name: Option<&str>,
-    ) -> Result<(), GraphStoreError>;
+    async fn delete_node(&self, id: &str, user_name: Option<&str>) -> Result<(), GraphStoreError>;
 }
 
 /// Vector store abstraction (subset of MemOS BaseVecDB).
@@ -146,7 +142,8 @@ pub trait MemCube: Send + Sync {
     async fn add_memories(&self, req: &ApiAddRequest) -> Result<MemoryResponse, MemCubeError>;
 
     /// Search memories from request; returns SearchResponse.
-    async fn search_memories(&self, req: &ApiSearchRequest) -> Result<SearchResponse, MemCubeError>;
+    async fn search_memories(&self, req: &ApiSearchRequest)
+        -> Result<SearchResponse, MemCubeError>;
 
     /// Update an existing memory (partial fields); re-embeds if memory text changed.
     async fn update_memory(
@@ -191,10 +188,7 @@ pub trait AuditStore: Send + Sync {
     async fn append(&self, event: AuditEvent) -> Result<(), AuditStoreError>;
 
     /// List events with optional filters and limit/offset. Newest first.
-    async fn list(
-        &self,
-        opts: &AuditListOptions,
-    ) -> Result<Vec<AuditEvent>, AuditStoreError>;
+    async fn list(&self, opts: &AuditListOptions) -> Result<Vec<AuditEvent>, AuditStoreError>;
 }
 
 #[derive(Debug, thiserror::Error)]

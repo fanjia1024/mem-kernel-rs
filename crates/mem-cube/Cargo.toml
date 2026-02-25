@@ -3,6 +3,7 @@ name = "mem-cube"
 version = "0.1.0"
 edition = "2021"
 description = "MemCube orchestration: add/search combining graph, vector, embedder"
+license = "Apache-2.0"
 
 [dependencies]
 mem-types = { path = "../mem-types" }

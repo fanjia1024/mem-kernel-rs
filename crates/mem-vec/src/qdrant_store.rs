@@ -40,11 +40,12 @@ impl QdrantVecStore {
         if !exists {
             self.client
                 .create_collection(
-                    CreateCollectionBuilder::new(&self.collection)
-                        .vectors_config(VectorParamsBuilder::new(
+                    CreateCollectionBuilder::new(&self.collection).vectors_config(
+                        VectorParamsBuilder::new(
                             vector_size,
                             qdrant_client::qdrant::Distance::Cosine,
-                        )),
+                        ),
+                    ),
                 )
                 .await
                 .map_err(|e| VecStoreError::Other(e.to_string()))?;
@@ -53,9 +54,7 @@ impl QdrantVecStore {
     }
 
     fn collection(&self, override_name: Option<&str>) -> String {
-        override_name
-            .unwrap_or(&self.collection)
-            .to_string()
+        override_name.unwrap_or(&self.collection).to_string()
     }
 }
 
@@ -86,9 +85,7 @@ impl VecStore for QdrantVecStore {
             })
             .collect();
         self.client
-            .upsert_points(
-                UpsertPointsBuilder::new(coll, points).wait(true),
-            )
+            .upsert_points(UpsertPointsBuilder::new(coll, points).wait(true))
             .await
             .map_err(|e| VecStoreError::Other(e.to_string()))?;
         Ok(())
@@ -114,15 +111,14 @@ impl VecStore for QdrantVecStore {
             .result
             .into_iter()
             .map(|p| {
-                let id = p.id
+                let id = p
+                    .id
                     .as_ref()
                     .and_then(|id| {
-                        id.point_id_options.as_ref().and_then(|o| match o {
-                            qdrant_client::qdrant::point_id::PointIdOptions::Uuid(u) => {
-                                Some(u.clone())
-                            }
+                        id.point_id_options.as_ref().map(|o| match o {
+                            qdrant_client::qdrant::point_id::PointIdOptions::Uuid(u) => u.clone(),
                             qdrant_client::qdrant::point_id::PointIdOptions::Num(n) => {
-                                Some(n.to_string())
+                                n.to_string()
                             }
                         })
                     })
@@ -140,12 +136,16 @@ impl VecStore for QdrantVecStore {
         collection: Option<&str>,
     ) -> Result<Vec<VecStoreItem>, VecStoreError> {
         let coll = self.collection(collection);
-        let point_ids: Vec<qdrant_client::qdrant::PointId> =
-            ids.iter().map(|s| qdrant_client::qdrant::PointId::from(s.as_str())).collect();
+        let point_ids: Vec<qdrant_client::qdrant::PointId> = ids
+            .iter()
+            .map(|s| qdrant_client::qdrant::PointId::from(s.as_str()))
+            .collect();
         let resp = self
             .client
             .get_points(
-                GetPointsBuilder::new(coll, point_ids).with_payload(true).with_vectors(true),
+                GetPointsBuilder::new(coll, point_ids)
+                    .with_payload(true)
+                    .with_vectors(true),
             )
             .await
             .map_err(|e| VecStoreError::Other(e.to_string()))?;
@@ -157,12 +157,10 @@ impl VecStore for QdrantVecStore {
                     .id
                     .as_ref()
                     .and_then(|id| {
-                        id.point_id_options.as_ref().and_then(|o| match o {
-                            qdrant_client::qdrant::point_id::PointIdOptions::Uuid(u) => {
-                                Some(u.clone())
-                            }
+                        id.point_id_options.as_ref().map(|o| match o {
+                            qdrant_client::qdrant::point_id::PointIdOptions::Uuid(u) => u.clone(),
                             qdrant_client::qdrant::point_id::PointIdOptions::Num(n) => {
-                                Some(n.to_string())
+                                n.to_string()
                             }
                         })
                     })
@@ -215,8 +213,10 @@ impl VecStore for QdrantVecStore {
 
     async fn delete(&self, ids: &[String], collection: Option<&str>) -> Result<(), VecStoreError> {
         let coll = self.collection(collection);
-        let point_ids: Vec<qdrant_client::qdrant::PointId> =
-            ids.iter().map(|s| qdrant_client::qdrant::PointId::from(s.as_str())).collect();
+        let point_ids: Vec<qdrant_client::qdrant::PointId> = ids
+            .iter()
+            .map(|s| qdrant_client::qdrant::PointId::from(s.as_str()))
+            .collect();
         self.client
             .delete_points(DeletePointsBuilder::new(coll).points(point_ids))
             .await
@@ -249,9 +249,7 @@ impl VecStore for QdrantVecStore {
             })
             .collect();
         self.client
-            .upsert_points(
-                UpsertPointsBuilder::new(coll, points).wait(true),
-            )
+            .upsert_points(UpsertPointsBuilder::new(coll, points).wait(true))
             .await
             .map_err(|e| VecStoreError::Other(e.to_string()))?;
         Ok(())

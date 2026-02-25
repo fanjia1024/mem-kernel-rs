@@ -5,13 +5,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+type ScopeIndex = HashMap<String, HashMap<String, Vec<String>>>;
+
 /// In-memory implementation of GraphStore.
 /// Nodes are keyed by id (globally unique); user/scope indexed for get_all_memory_items and search filtering.
 pub struct InMemoryGraphStore {
     /// node_id -> node (embedding optional; used for search_by_embedding when present).
     nodes: Arc<RwLock<HashMap<String, MemoryNode>>>,
     /// user_name -> scope -> node_ids (for get_all_memory_items).
-    scope_index: Arc<RwLock<HashMap<String, HashMap<String, Vec<String>>>>>,
+    scope_index: Arc<RwLock<ScopeIndex>>,
 }
 
 impl InMemoryGraphStore {
@@ -49,7 +51,10 @@ impl GraphStore for InMemoryGraphStore {
         let un = user_name.unwrap_or("");
         let scope = Self::scope_for_node(metadata);
         let mut meta = metadata.clone();
-        meta.insert("user_name".to_string(), serde_json::Value::String(un.to_string()));
+        meta.insert(
+            "user_name".to_string(),
+            serde_json::Value::String(un.to_string()),
+        );
         let node = MemoryNode {
             id: id.to_string(),
             memory: memory.to_string(),
@@ -83,8 +88,10 @@ impl GraphStore for InMemoryGraphStore {
         for node in nodes {
             let scope = Self::scope_for_node(&node.metadata);
             let mut n = node.clone();
-            n.metadata
-                .insert("user_name".to_string(), serde_json::Value::String(un.to_string()));
+            n.metadata.insert(
+                "user_name".to_string(),
+                serde_json::Value::String(un.to_string()),
+            );
             guard.insert(n.id.clone(), n);
             let scope_list = user_map.entry(scope).or_default();
             if !scope_list.contains(&node.id) {
@@ -139,7 +146,11 @@ impl GraphStore for InMemoryGraphStore {
         let mut candidates: Vec<(String, f64)> = Vec::new();
         for node in guard.values() {
             if !un.is_empty() {
-                let node_user = node.metadata.get("user_name").and_then(|v| v.as_str()).unwrap_or("");
+                let node_user = node
+                    .metadata
+                    .get("user_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 if node_user != un {
                     continue;
                 }
@@ -214,11 +225,7 @@ impl GraphStore for InMemoryGraphStore {
         Ok(())
     }
 
-    async fn delete_node(
-        &self,
-        id: &str,
-        user_name: Option<&str>,
-    ) -> Result<(), GraphStoreError> {
+    async fn delete_node(&self, id: &str, user_name: Option<&str>) -> Result<(), GraphStoreError> {
         {
             let nodes = self.nodes.read().await;
             let node = nodes
@@ -239,9 +246,9 @@ impl GraphStore for InMemoryGraphStore {
             }
         }
         let mut nodes = self.nodes.write().await;
-        nodes.remove(id).ok_or_else(|| {
-            GraphStoreError::Other(format!("node not found: {}", id))
-        })?;
+        nodes
+            .remove(id)
+            .ok_or_else(|| GraphStoreError::Other(format!("node not found: {}", id)))?;
         let mut idx = self.scope_index.write().await;
         for scope_map in idx.values_mut() {
             for list in scope_map.values_mut() {
@@ -256,7 +263,11 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
-    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| (*x as f64) * (*y as f64)).sum();
+    let dot: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| (*x as f64) * (*y as f64))
+        .sum();
     let na: f64 = a.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
     let nb: f64 = b.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
     if na == 0.0 || nb == 0.0 {

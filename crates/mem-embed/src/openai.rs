@@ -32,7 +32,8 @@ impl OpenAiEmbedder {
     }
 
     pub fn from_env() -> Self {
-        let url = std::env::var("EMBED_API_URL").unwrap_or_else(|_| "https://api.openai.com/v1/embeddings".to_string());
+        let url = std::env::var("EMBED_API_URL")
+            .unwrap_or_else(|_| "https://api.openai.com/v1/embeddings".to_string());
         let api_key = std::env::var("EMBED_API_KEY").ok();
         let model = std::env::var("EMBED_MODEL").ok();
         Self::new(url, api_key, model.as_deref())
@@ -55,11 +56,20 @@ impl Embedder for OpenAiEmbedder {
             if let Some(ref key) = self.api_key {
                 req = req.bearer_auth(key);
             }
-            let res = req.send().await.map_err(|e| EmbedderError::Other(e.to_string()))?;
+            let res = req
+                .send()
+                .await
+                .map_err(|e| EmbedderError::Other(e.to_string()))?;
             let status = res.status();
-            let body = res.text().await.map_err(|e| EmbedderError::Other(e.to_string()))?;
+            let body = res
+                .text()
+                .await
+                .map_err(|e| EmbedderError::Other(e.to_string()))?;
             if !status.is_success() {
-                return Err(EmbedderError::Other(format!("embed API error {}: {}", status, body)));
+                return Err(EmbedderError::Other(format!(
+                    "embed API error {}: {}",
+                    status, body
+                )));
             }
             let parsed: EmbedResponse =
                 serde_json::from_str(&body).map_err(|e| EmbedderError::Other(e.to_string()))?;

@@ -3,6 +3,7 @@ name = "mem-graph"
 version = "0.1.0"
 edition = "2021"
 description = "Graph store trait and in-memory implementation for MemOS"
+license = "Apache-2.0"
 
 [dependencies]
 mem-types = { path = "../mem-types" }

@@ -3,6 +3,7 @@ name = "mem-scheduler"
 version = "0.1.0"
 edition = "2021"
 description = "Async add scheduler: queue + worker + job status (MemOS-compatible)"
+license = "Apache-2.0"
 
 [dependencies]
 mem-types = { path = "../mem-types" }

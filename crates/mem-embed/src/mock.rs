@@ -31,7 +31,8 @@ impl Embedder for MockEmbedder {
             let h = hasher.finish();
             let mut v = Vec::with_capacity(DIM);
             for i in 0..DIM {
-                let x = ((h.wrapping_add(i as u64)).wrapping_mul(0x9e3779b97f4a7c15) >> 32) as f32 / u32::MAX as f32;
+                let x = ((h.wrapping_add(i as u64)).wrapping_mul(0x9e3779b97f4a7c15) >> 32) as f32
+                    / u32::MAX as f32;
                 v.push(x * 2.0 - 1.0);
             }
             let norm: f64 = v.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();

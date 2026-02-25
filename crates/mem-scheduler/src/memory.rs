@@ -2,8 +2,8 @@
 
 use crate::{Scheduler, SchedulerError};
 use async_trait::async_trait;
-use mem_types::{ApiAddRequest, AuditEvent, AuditEventKind, AuditStore, Job, JobStatus};
 use chrono::Utc;
+use mem_types::{ApiAddRequest, AuditEvent, AuditEventKind, AuditStore, Job, JobStatus};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -68,7 +68,10 @@ impl InMemoryScheduler {
                             kind: AuditEventKind::Add,
                             memory_id,
                             user_id: req.user_id.clone(),
-                            cube_id: cube_ids.first().cloned().unwrap_or_else(|| req.user_id.clone()),
+                            cube_id: cube_ids
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| req.user_id.clone()),
                             timestamp: now2.clone(),
                             input_summary: None,
                             outcome: Some(format!("code={}", res.code)),
@@ -107,10 +110,7 @@ impl Scheduler for InMemoryScheduler {
         };
         {
             let mut guard = self.jobs.write().await;
-            guard.insert(
-                job_id.clone(),
-                JobState { job },
-            );
+            guard.insert(job_id.clone(), JobState { job });
         }
         self.tx
             .send((job_id.clone(), req))

@@ -1,10 +1,10 @@
 //! NaiveMemCube: single MemCube with text_mem path.
 
-use mem_types::*;
-use mem_graph::GraphStore;
-use mem_embed::Embedder;
-use mem_vec::VecStore;
 use chrono::Utc;
+use mem_embed::Embedder;
+use mem_graph::GraphStore;
+use mem_types::*;
+use mem_vec::VecStore;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -100,7 +100,10 @@ where
         })
     }
 
-    async fn search_memories(&self, req: &ApiSearchRequest) -> Result<SearchResponse, MemCubeError> {
+    async fn search_memories(
+        &self,
+        req: &ApiSearchRequest,
+    ) -> Result<SearchResponse, MemCubeError> {
         let cube_ids = req.readable_cube_ids();
         let user_name = cube_ids.first().map(String::as_str).unwrap_or(&req.user_id);
 
@@ -155,7 +158,13 @@ where
             .map(|n| {
                 let mut meta = n.metadata.clone();
                 if let Some(score) = hits.iter().find(|h| h.id == n.id).map(|h| h.score) {
-                    meta.insert("relativity".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(score).unwrap_or(serde_json::Number::from(0))));
+                    meta.insert(
+                        "relativity".to_string(),
+                        serde_json::Value::Number(
+                            serde_json::Number::from_f64(score)
+                                .unwrap_or(serde_json::Number::from(0)),
+                        ),
+                    );
                 }
                 MemoryItem {
                     id: n.id,
@@ -183,10 +192,7 @@ where
         &self,
         req: &UpdateMemoryRequest,
     ) -> Result<UpdateMemoryResponse, MemCubeError> {
-        let user_name = req
-            .mem_cube_id
-            .as_deref()
-            .unwrap_or(req.user_id.as_str());
+        let user_name = req.mem_cube_id.as_deref().unwrap_or(req.user_id.as_str());
         let id = &req.memory_id;
 
         let existing = self
@@ -194,7 +200,8 @@ where
             .get_node(id, false)
             .await
             .map_err(MemCubeError::Graph)?;
-        let node = existing.ok_or_else(|| MemCubeError::NotFound(format!("memory not found: {}", id)))?;
+        let node =
+            existing.ok_or_else(|| MemCubeError::NotFound(format!("memory not found: {}", id)))?;
         let node_owner = node
             .metadata
             .get("user_name")
@@ -206,7 +213,10 @@ where
 
         let mut fields = HashMap::new();
         if let Some(ref memory) = req.memory {
-            fields.insert("memory".to_string(), serde_json::Value::String(memory.clone()));
+            fields.insert(
+                "memory".to_string(),
+                serde_json::Value::String(memory.clone()),
+            );
         }
         if let Some(ref meta) = req.metadata {
             for (k, v) in meta {
@@ -244,7 +254,10 @@ where
                 vector: embedding,
                 payload,
             };
-            self.vec_store.upsert(&[item], None).await.map_err(MemCubeError::Vec)?;
+            self.vec_store
+                .upsert(&[item], None)
+                .await
+                .map_err(MemCubeError::Vec)?;
         }
 
         let data = vec![serde_json::json!({ "id": id, "updated": true })];
@@ -260,17 +273,15 @@ where
         req: &ForgetMemoryRequest,
     ) -> Result<ForgetMemoryResponse, MemCubeError> {
         let id = &req.memory_id;
-        let user_name = req
-            .mem_cube_id
-            .as_deref()
-            .unwrap_or(req.user_id.as_str());
+        let user_name = req.mem_cube_id.as_deref().unwrap_or(req.user_id.as_str());
 
         let existing = self
             .graph
             .get_node(id, false)
             .await
             .map_err(MemCubeError::Graph)?;
-        let node = existing.ok_or_else(|| MemCubeError::NotFound(format!("memory not found: {}", id)))?;
+        let node =
+            existing.ok_or_else(|| MemCubeError::NotFound(format!("memory not found: {}", id)))?;
         let node_owner = node
             .metadata
             .get("user_name")
@@ -294,13 +305,19 @@ where
                 .update_node(id, &fields, Some(user_name))
                 .await
                 .map_err(MemCubeError::Graph)?;
-            self.vec_store.delete(&[id.to_string()], None).await.map_err(MemCubeError::Vec)?;
+            self.vec_store
+                .delete(&[id.to_string()], None)
+                .await
+                .map_err(MemCubeError::Vec)?;
         } else {
             self.graph
                 .delete_node(id, Some(user_name))
                 .await
                 .map_err(MemCubeError::Graph)?;
-            self.vec_store.delete(&[id.to_string()], None).await.map_err(MemCubeError::Vec)?;
+            self.vec_store
+                .delete(&[id.to_string()], None)
+                .await
+                .map_err(MemCubeError::Vec)?;
         }
         let data = vec![serde_json::json!({ "id": id, "forgotten": true })];
         Ok(ForgetMemoryResponse {
@@ -311,10 +328,7 @@ where
     }
 
     async fn get_memory(&self, req: &GetMemoryRequest) -> Result<GetMemoryResponse, MemCubeError> {
-        let user_name = req
-            .mem_cube_id
-            .as_deref()
-            .unwrap_or(req.user_id.as_str());
+        let user_name = req.mem_cube_id.as_deref().unwrap_or(req.user_id.as_str());
         let node_opt = self
             .graph
             .get_node(&req.memory_id, false)
@@ -342,7 +356,11 @@ where
                 data: None,
             });
         }
-        let state = node.metadata.get("state").and_then(|v| v.as_str()).unwrap_or("active");
+        let state = node
+            .metadata
+            .get("state")
+            .and_then(|v| v.as_str())
+            .unwrap_or("active");
         if state == "tombstone" && !req.include_deleted {
             return Ok(GetMemoryResponse {
                 code: 404,
