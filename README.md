@@ -2,6 +2,16 @@
 
 Rust implementation of a MemOS-compatible memory kernel: unified add/search/update/delete/get over graph + vector memory backends.
 
+## Documentation
+
+- Documentation index: `docs/README.md`
+- Quick start: `docs/quickstart.md`
+- API reference: `docs/api-reference.md`
+- Configuration: `docs/configuration.md`
+- Architecture: `docs/architecture.md`
+- Development guide: `docs/development.md`
+- Troubleshooting: `docs/troubleshooting.md`
+
 ## Status
 
 - Stage: pre-1.0 (`0.1.x`)
@@ -138,6 +148,12 @@ GitHub Actions runs format, clippy, and tests on pushes/PRs to `main`.
 - Security policy: `SECURITY.md`
 - Governance: `GOVERNANCE.md`
 - Changelog: `CHANGELOG.md`
+
+## Suggested reading path
+
+- New users: `docs/quickstart.md` -> `docs/api-reference.md` -> `docs/troubleshooting.md`
+- Deployers: `docs/configuration.md` -> `docs/architecture.md`
+- Contributors: `docs/development.md` + `CONTRIBUTING.md`
 
 ## License
 
