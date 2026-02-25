@@ -4,6 +4,8 @@
 
 - `MEMOS_LISTEN`：监听地址，默认 `0.0.0.0:8001`
 - `RUST_LOG`：日志级别，默认 `info`
+- `MEMOS_AUTH_TOKEN`：可选。设置后，所有 `/product/*` 接口需要
+  `Authorization: Bearer <token>`
 
 ## Embedding 配置
 

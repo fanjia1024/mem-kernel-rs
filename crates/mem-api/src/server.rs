@@ -1,7 +1,10 @@
 //! Axum server and routes.
 
 use axum::{
-    extract::{Query, State},
+    extract::{Query, Request, State},
+    http::{header, HeaderMap, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -138,10 +141,11 @@ pub struct AppState {
     pub cube: Arc<dyn MemCube + Send + Sync>,
     pub scheduler: Arc<dyn Scheduler + Send + Sync>,
     pub audit_log: Arc<dyn AuditStore + Send + Sync>,
+    pub auth_token: Option<String>,
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
-    Router::new()
+    let product_routes = Router::new()
         .route("/product/add", post(handle_add))
         .route("/product/search", post(handle_search))
         .route("/product/scheduler/status", get(handle_scheduler_status))
@@ -149,9 +153,46 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/product/delete_memory", post(handle_delete_memory))
         .route("/product/get_memory", post(handle_get_memory))
         .route("/product/audit/list", get(handle_audit_list))
+        .route_layer(middleware::from_fn_with_state(
+            Arc::clone(&state),
+            require_auth,
+        ));
+
+    Router::new()
         .route("/health", get(handle_health))
+        .merge(product_routes)
         .layer(CorsLayer::permissive())
         .with_state(state)
+}
+
+async fn require_auth(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    request: Request,
+    next: Next,
+) -> Response {
+    let Some(expected) = state.auth_token.as_ref() else {
+        return next.run(request).await;
+    };
+    let authorized = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(|token| token == expected)
+        .unwrap_or(false);
+    if authorized {
+        next.run(request).await
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "code": 401,
+                "message": "Unauthorized",
+                "data": serde_json::Value::Null
+            })),
+        )
+            .into_response()
+    }
 }
 
 async fn push_audit(state: &AppState, event: AuditEvent) {

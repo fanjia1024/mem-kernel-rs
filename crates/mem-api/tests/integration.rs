@@ -1,7 +1,7 @@
 //! Integration tests: add/search, update, forget, get_memory, isolation.
 
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{header, Request, StatusCode};
 use http_body_util::BodyExt;
 use mem_api::server::{self, AppState, InMemoryAuditStore};
 use mem_cube::NaiveMemCube;
@@ -14,6 +14,10 @@ use std::sync::Arc;
 use tower::util::ServiceExt;
 
 fn test_app() -> axum::Router {
+    test_app_with_auth(None)
+}
+
+fn test_app_with_auth(auth_token: Option<&str>) -> axum::Router {
     let graph = InMemoryGraphStore::new();
     let vec_store = InMemoryVecStore::new(None);
     let embedder = MockEmbedder::new();
@@ -29,6 +33,7 @@ fn test_app() -> axum::Router {
         cube,
         scheduler,
         audit_log: audit_store,
+        auth_token: auth_token.map(str::to_string),
     });
     server::router(state)
 }
@@ -559,4 +564,47 @@ async fn search_respects_relativity_threshold() {
     let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let memories = j["data"]["text_mem"][0]["memories"].as_array().unwrap();
     assert!(memories.is_empty());
+}
+
+#[tokio::test]
+async fn auth_rejects_request_without_bearer_token() {
+    let app = test_app_with_auth(Some("secret-token"));
+    let add_body = json!({
+        "user_id": "auth-u1",
+        "memory_content": "auth required",
+        "async_mode": "sync"
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/product/add")
+        .header("content-type", "application/json")
+        .body(Body::from(add_body.to_string()))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(j["code"], 401);
+}
+
+#[tokio::test]
+async fn auth_accepts_request_with_valid_bearer_token() {
+    let app = test_app_with_auth(Some("secret-token"));
+    let add_body = json!({
+        "user_id": "auth-u2",
+        "memory_content": "auth pass",
+        "async_mode": "sync"
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/product/add")
+        .header("content-type", "application/json")
+        .header(header::AUTHORIZATION, "Bearer secret-token")
+        .body(Body::from(add_body.to_string()))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(j["code"], 200);
 }

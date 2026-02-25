@@ -2,6 +2,13 @@
 
 Base URL: `http://<host>:8001`
 
+## 认证
+
+- 未设置 `MEMOS_AUTH_TOKEN`：不需要鉴权（默认开发模式）
+- 已设置 `MEMOS_AUTH_TOKEN`：所有 `/product/*` 端点都需要
+  `Authorization: Bearer <token>`
+- `GET /health` 不需要鉴权
+
 ## 通用响应结构
 
 ```json

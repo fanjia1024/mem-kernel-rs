@@ -51,10 +51,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Arc::clone(&cube),
         Some(Arc::clone(&audit_store)),
     ));
+    let auth_token =
+        std::env::var("MEMOS_AUTH_TOKEN")
+            .ok()
+            .and_then(|s| if s.is_empty() { None } else { Some(s) });
+    if auth_token.is_some() {
+        tracing::info!("Auth is enabled for /product/* routes");
+    }
     let state = Arc::new(server::AppState {
         cube,
         scheduler,
         audit_log: audit_store,
+        auth_token,
     });
     let app = server::router(state);
     let addr: SocketAddr = std::env::var("MEMOS_LISTEN")

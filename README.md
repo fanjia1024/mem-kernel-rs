@@ -11,6 +11,7 @@ Rust implementation of a MemOS-compatible memory kernel: unified add/search/upda
 - Architecture: `docs/architecture.md`
 - Development guide: `docs/development.md`
 - Troubleshooting: `docs/troubleshooting.md`
+- 1.0 roadmap: `docs/roadmap-1.0.md`
 
 ## Status
 
