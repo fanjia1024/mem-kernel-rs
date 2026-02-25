@@ -65,16 +65,24 @@ where
         }
     }
 
-    fn resolve_scope(req: &ApiAddRequest, default_scope: &str) -> String {
-        let from_info = req.info.as_ref().and_then(|info| {
-            info.get("scope")
-                .or_else(|| info.get("memory_scope"))
-                .and_then(|v| v.as_str())
-        });
-        from_info
-            .and_then(Self::normalize_scope)
-            .unwrap_or(default_scope)
-            .to_string()
+    /// Resolves scope from request info, or returns default. Returns `BadRequest` if a scope
+    /// is explicitly provided in info but is invalid or not a string (consistent with `update_memory`).
+    fn resolve_scope_or_error(req: &ApiAddRequest, default_scope: &str) -> Result<String, MemCubeError> {
+        let info = req.info.as_ref();
+        let scope_value = info.and_then(|i| i.get("scope").or_else(|| i.get("memory_scope")));
+        match scope_value {
+            None => Ok(default_scope.to_string()),
+            Some(v) => match v.as_str() {
+                None => Err(MemCubeError::BadRequest(
+                    "scope must be a string".to_string(),
+                )),
+                Some(s) => Self::normalize_scope(s)
+                    .map(str::to_string)
+                    .ok_or_else(|| {
+                        MemCubeError::BadRequest(format!("invalid scope value: {}", s))
+                    }),
+            },
+        }
     }
 
     fn bucket_name_for_scope(scope: &str) -> Option<&'static str> {
@@ -100,7 +108,7 @@ where
         })?;
         let cube_ids = req.writable_cube_ids();
         let user_name = cube_ids.first().map(String::as_str).unwrap_or(&req.user_id);
-        let scope = Self::resolve_scope(req, &self.default_scope);
+        let scope = Self::resolve_scope_or_error(req, &self.default_scope)?;
 
         let id = Uuid::new_v4().to_string();
         let embedding = self.embedder.embed(&content).await?;
