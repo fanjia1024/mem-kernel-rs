@@ -417,3 +417,146 @@ async fn multi_user_isolation() {
     let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(j["code"], 404);
 }
+
+#[tokio::test]
+async fn scheduler_status_requires_owner_user() {
+    let app = test_app();
+    let add_body = json!({
+        "user_id": "owner",
+        "memory_content": "owner async item",
+        "async_mode": "async"
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/product/add")
+        .header("content-type", "application/json")
+        .body(Body::from(add_body.to_string()))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let task_id = j["data"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|d| d.get("task_id"))
+        .and_then(|v| v.as_str())
+        .unwrap();
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/product/scheduler/status?user_id=intruder&task_id={}",
+            task_id
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(j["code"], 404);
+}
+
+#[tokio::test]
+async fn search_filter_cannot_break_cube_isolation() {
+    let app = test_app();
+
+    let add_alice = json!({
+        "user_id": "alice2",
+        "mem_cube_id": "alice2",
+        "memory_content": "Alice private",
+        "async_mode": "sync"
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/product/add")
+        .header("content-type", "application/json")
+        .body(Body::from(add_alice.to_string()))
+        .unwrap();
+    app.clone().oneshot(req).await.unwrap();
+
+    let add_bob = json!({
+        "user_id": "bob2",
+        "mem_cube_id": "bob2",
+        "memory_content": "Bob private",
+        "async_mode": "sync"
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/product/add")
+        .header("content-type", "application/json")
+        .body(Body::from(add_bob.to_string()))
+        .unwrap();
+    app.clone().oneshot(req).await.unwrap();
+
+    let search_body = json!({
+        "query": "private",
+        "user_id": "bob2",
+        "filter": { "mem_cube_id": "alice2" }
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/product/search")
+        .header("content-type", "application/json")
+        .body(Body::from(search_body.to_string()))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let memories = j["data"]["text_mem"][0]["memories"].as_array().unwrap();
+    assert_eq!(memories.len(), 1);
+    assert_eq!(memories[0]["memory"], "Bob private");
+}
+
+#[tokio::test]
+async fn search_respects_relativity_threshold() {
+    let app = test_app();
+    let add_body = json!({
+        "user_id": "u_rel",
+        "mem_cube_id": "u_rel",
+        "memory_content": "Relativity target memory",
+        "async_mode": "sync"
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/product/add")
+        .header("content-type", "application/json")
+        .body(Body::from(add_body.to_string()))
+        .unwrap();
+    app.clone().oneshot(req).await.unwrap();
+
+    let baseline_search = json!({
+        "query": "Relativity target memory",
+        "user_id": "u_rel",
+        "top_k": 1
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/product/search")
+        .header("content-type", "application/json")
+        .body(Body::from(baseline_search.to_string()))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let score = j["data"]["text_mem"][0]["memories"][0]["metadata"]["relativity"]
+        .as_f64()
+        .unwrap();
+
+    let strict_search = json!({
+        "query": "Relativity target memory",
+        "user_id": "u_rel",
+        "top_k": 1,
+        "relativity": score + 0.000001
+    });
+    let req = Request::builder()
+        .method("POST")
+        .uri("/product/search")
+        .header("content-type", "application/json")
+        .body(Body::from(strict_search.to_string()))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    let body = res.into_body().collect().await.unwrap().to_bytes();
+    let j: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let memories = j["data"]["text_mem"][0]["memories"].as_array().unwrap();
+    assert!(memories.is_empty());
+}

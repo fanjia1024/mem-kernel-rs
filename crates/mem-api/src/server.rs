@@ -251,7 +251,7 @@ async fn handle_scheduler_status(
             });
         }
     };
-    match state.scheduler.get_status(task_id).await {
+    match state.scheduler.get_status(&q.user_id, task_id).await {
         Ok(Some(job)) => Json(SchedulerStatusResponse {
             code: 200,
             message: "Success".to_string(),

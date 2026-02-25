@@ -110,20 +110,21 @@ where
         let query_vector = self.embedder.embed(&req.query).await?;
         let top_k = req.top_k as usize;
 
-        let filter = {
-            let mut f = HashMap::new();
-            f.insert(
-                "mem_cube_id".to_string(),
-                serde_json::Value::String(user_name.to_string()),
-            );
-            Some(f)
-        };
+        let mut filter = req.filter.clone().unwrap_or_default();
+        // Always enforce cube boundary even if caller passes conflicting filter.
+        filter.insert(
+            "mem_cube_id".to_string(),
+            serde_json::Value::String(user_name.to_string()),
+        );
 
-        let hits = self
+        let mut hits = self
             .vec_store
-            .search(&query_vector, top_k, filter.as_ref(), None)
+            .search(&query_vector, top_k, Some(&filter), None)
             .await
             .map_err(MemCubeError::Vec)?;
+        if req.relativity > 0.0 {
+            hits.retain(|h| h.score >= req.relativity);
+        }
 
         let ids: Vec<String> = hits.iter().map(|h| h.id.clone()).collect();
         if ids.is_empty() {

@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 struct JobState {
     job: Job,
+    owner_user_id: String,
 }
 
 /// In-memory scheduler: queues add requests, one worker calls MemCube::add_memories and updates job status.
@@ -110,7 +111,13 @@ impl Scheduler for InMemoryScheduler {
         };
         {
             let mut guard = self.jobs.write().await;
-            guard.insert(job_id.clone(), JobState { job });
+            guard.insert(
+                job_id.clone(),
+                JobState {
+                    job,
+                    owner_user_id: req.user_id.clone(),
+                },
+            );
         }
         self.tx
             .send((job_id.clone(), req))
@@ -118,8 +125,14 @@ impl Scheduler for InMemoryScheduler {
         Ok(job_id)
     }
 
-    async fn get_status(&self, job_id: &str) -> Result<Option<Job>, SchedulerError> {
+    async fn get_status(&self, user_id: &str, job_id: &str) -> Result<Option<Job>, SchedulerError> {
         let guard = self.jobs.read().await;
-        Ok(guard.get(job_id).map(|s| s.job.clone()))
+        Ok(guard.get(job_id).and_then(|s| {
+            if s.owner_user_id == user_id {
+                Some(s.job.clone())
+            } else {
+                None
+            }
+        }))
     }
 }
