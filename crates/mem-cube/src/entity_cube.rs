@@ -355,6 +355,70 @@ where
     ) -> Result<GraphPathsResponse, MemCubeError> {
         self.inner.graph_paths(req).await
     }
+
+    // Batch Operations - delegate to inner
+    async fn add_memories_batch(
+        &self,
+        req: &BatchAddRequest,
+    ) -> Result<BatchAddResponse, MemCubeError> {
+        self.inner.add_memories_batch(req).await
+    }
+
+    async fn delete_memories_batch(
+        &self,
+        req: &BatchDeleteRequest,
+    ) -> Result<BatchDeleteResponse, MemCubeError> {
+        self.inner.delete_memories_batch(req).await
+    }
+
+    async fn export_memories(&self, req: &ExportRequest) -> Result<ExportResponse, MemCubeError> {
+        self.inner.export_memories(req).await
+    }
+
+    // Session Management - delegate to inner
+    async fn create_session(
+        &self,
+        req: &CreateSessionRequest,
+    ) -> Result<SessionResponse, MemCubeError> {
+        self.inner.create_session(req).await
+    }
+
+    async fn get_session(
+        &self,
+        session_id: &str,
+        user_id: &str,
+    ) -> Result<Option<SessionResponse>, MemCubeError> {
+        self.inner.get_session(session_id, user_id).await
+    }
+
+    async fn list_sessions(
+        &self,
+        req: &ListSessionsRequest,
+    ) -> Result<ListSessionsResponse, MemCubeError> {
+        self.inner.list_sessions(req).await
+    }
+
+    async fn delete_session(
+        &self,
+        req: &DeleteSessionRequest,
+    ) -> Result<MemoryResponse, MemCubeError> {
+        self.inner.delete_session(req).await
+    }
+
+    async fn session_timeline(
+        &self,
+        req: &SessionTimelineRequest,
+    ) -> Result<SessionTimelineResponse, MemCubeError> {
+        self.inner.session_timeline(req).await
+    }
+
+    // Memory Summary - delegate to inner
+    async fn summarize_memories(
+        &self,
+        req: &SummarizeRequest,
+    ) -> Result<SummarizeResponse, MemCubeError> {
+        self.inner.summarize_memories(req).await
+    }
 }
 
 // ============================================================================

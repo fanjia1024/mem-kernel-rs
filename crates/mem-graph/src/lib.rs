@@ -4,6 +4,9 @@ mod entity_knowledge_graph;
 mod memory;
 mod store;
 
+#[cfg(feature = "sqlite")]
+mod sqlite;
+
 pub use entity_knowledge_graph::{
     EntityKgError, EntityKgSnapshot, EntityKgStats, EntityKnowledgeGraph,
 };
@@ -12,3 +15,6 @@ pub use mem_types::{
 };
 pub use memory::InMemoryGraphStore;
 pub use store::GraphStore;
+
+#[cfg(feature = "sqlite")]
+pub use sqlite::SqliteGraphStore;

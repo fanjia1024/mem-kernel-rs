@@ -306,6 +306,73 @@ pub trait MemCube: Send + Sync {
             "hybrid search not supported".to_string(),
         ))
     }
+
+    // ============================================================================
+    // Batch Operations (P1-2)
+    // ============================================================================
+
+    /// Add multiple memories in batch.
+    async fn add_memories_batch(
+        &self,
+        req: &crate::dto::BatchAddRequest,
+    ) -> Result<crate::dto::BatchAddResponse, MemCubeError>;
+
+    /// Delete multiple memories in batch.
+    async fn delete_memories_batch(
+        &self,
+        req: &crate::dto::BatchDeleteRequest,
+    ) -> Result<crate::dto::BatchDeleteResponse, MemCubeError>;
+
+    /// Export memories to JSON/JSONL.
+    async fn export_memories(
+        &self,
+        req: &crate::dto::ExportRequest,
+    ) -> Result<crate::dto::ExportResponse, MemCubeError>;
+
+    // ============================================================================
+    // Session Management (P1-3)
+    // ============================================================================
+
+    /// Create a new session.
+    async fn create_session(
+        &self,
+        req: &crate::dto::CreateSessionRequest,
+    ) -> Result<crate::dto::SessionResponse, MemCubeError>;
+
+    /// Get a session by ID.
+    async fn get_session(
+        &self,
+        session_id: &str,
+        user_id: &str,
+    ) -> Result<Option<crate::dto::SessionResponse>, MemCubeError>;
+
+    /// List sessions for a user.
+    async fn list_sessions(
+        &self,
+        req: &crate::dto::ListSessionsRequest,
+    ) -> Result<crate::dto::ListSessionsResponse, MemCubeError>;
+
+    /// Delete a session.
+    async fn delete_session(
+        &self,
+        req: &crate::dto::DeleteSessionRequest,
+    ) -> Result<crate::dto::MemoryResponse, MemCubeError>;
+
+    /// Get session timeline (memories in a session).
+    async fn session_timeline(
+        &self,
+        req: &crate::dto::SessionTimelineRequest,
+    ) -> Result<crate::dto::SessionTimelineResponse, MemCubeError>;
+
+    // ============================================================================
+    // Memory Summary (P1-1)
+    // ============================================================================
+
+    /// Summarize memories using LLM.
+    async fn summarize_memories(
+        &self,
+        req: &crate::dto::SummarizeRequest,
+    ) -> Result<crate::dto::SummarizeResponse, MemCubeError>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -342,6 +409,69 @@ pub trait AuditStore: Send + Sync {
 pub enum AuditStoreError {
     #[error("audit store error: {0}")]
     Other(String),
+}
+
+/// Session: represents a conversation session.
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub session_id: String,
+    pub user_id: String,
+    pub title: Option<String>,
+    pub memory_count: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub metadata: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Session store error.
+#[derive(Debug, thiserror::Error)]
+pub enum SessionError {
+    #[error("session error: {0}")]
+    Other(String),
+    #[error("not found: {0}")]
+    NotFound(String),
+}
+
+/// Session store trait for managing sessions (P1-3).
+#[async_trait]
+pub trait SessionStore: Send + Sync {
+    /// Create a new session.
+    async fn create_session(
+        &self,
+        user_id: &str,
+        title: Option<&str>,
+        metadata: Option<&std::collections::HashMap<String, serde_json::Value>>,
+    ) -> Result<Session, SessionError>;
+
+    /// Get a session by ID.
+    async fn get_session(
+        &self,
+        session_id: &str,
+        user_id: &str,
+    ) -> Result<Option<Session>, SessionError>;
+
+    /// List sessions for a user.
+    async fn list_sessions(
+        &self,
+        user_id: &str,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<(Vec<Session>, Option<String>), SessionError>;
+
+    /// Update a session.
+    async fn update_session(
+        &self,
+        session_id: &str,
+        user_id: &str,
+        title: Option<&str>,
+        metadata: Option<&std::collections::HashMap<String, serde_json::Value>>,
+    ) -> Result<Session, SessionError>;
+
+    /// Delete a session.
+    async fn delete_session(&self, session_id: &str, user_id: &str) -> Result<(), SessionError>;
+
+    /// Increment memory count for a session.
+    async fn increment_memory_count(&self, session_id: &str) -> Result<(), SessionError>;
 }
 
 #[derive(Debug, thiserror::Error)]

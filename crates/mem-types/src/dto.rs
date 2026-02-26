@@ -79,6 +79,15 @@ impl ApiAddRequest {
     }
 }
 
+/// Time range filter for search (P0: new)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeRange {
+    /// Start of time range (ISO8601)
+    pub start: String,
+    /// End of time range (ISO8601)
+    pub end: String,
+}
+
 /// Search-memory request (MemOS APISearchRequest).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiSearchRequest {
@@ -100,6 +109,15 @@ pub struct ApiSearchRequest {
     pub pref_top_k: u32,
     #[serde(default)]
     pub filter: Option<HashMap<String, serde_json::Value>>,
+    /// Search within time range (P0: new)
+    #[serde(default)]
+    pub time_range: Option<TimeRange>,
+    /// Only return memories created after this time (ISO8601)
+    #[serde(default)]
+    pub since: Option<String>,
+    /// Only return memories created before this time (ISO8601)
+    #[serde(default)]
+    pub until: Option<String>,
 }
 
 fn default_top_k() -> u32 {
@@ -686,4 +704,256 @@ pub struct BatchHybridSearchData {
     pub results: Vec<HybridSearchData>,
     /// Total processing time.
     pub total_latency_ms: u64,
+}
+
+// ============================================================================
+// Session Management DTOs (P1-3)
+// ============================================================================
+
+/// Create a new session request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSessionRequest {
+    pub user_id: String,
+    /// Optional session title
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<HashMap<String, serde_json::Value>>,
+}
+
+/// Session response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionResponse {
+    pub session_id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    pub memory_count: u64,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(default)]
+    pub metadata: HashMap<String, serde_json::Value>,
+}
+
+/// List sessions request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSessionsRequest {
+    pub user_id: String,
+    #[serde(default = "default_session_limit")]
+    pub limit: u32,
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
+fn default_session_limit() -> u32 {
+    50
+}
+
+/// Session list response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSessionsResponse {
+    #[serde(default = "default_code")]
+    pub code: i32,
+    pub message: String,
+    #[serde(default)]
+    pub data: Option<ListSessionsData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSessionsData {
+    pub sessions: Vec<SessionResponse>,
+    #[serde(default)]
+    pub next_cursor: Option<String>,
+}
+
+/// Delete session request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteSessionRequest {
+    pub session_id: String,
+    pub user_id: String,
+    /// Whether to delete all memories in the session
+    #[serde(default)]
+    pub delete_memories: bool,
+}
+
+/// Session timeline request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTimelineRequest {
+    pub session_id: String,
+    pub user_id: String,
+    #[serde(default = "default_timeline_limit")]
+    pub limit: u32,
+    #[serde(default)]
+    pub include_metadata: bool,
+}
+
+fn default_timeline_limit() -> u32 {
+    50
+}
+
+/// Session timeline response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTimelineResponse {
+    #[serde(default = "default_code")]
+    pub code: i32,
+    pub message: String,
+    #[serde(default)]
+    pub data: Option<SessionTimelineData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionTimelineData {
+    pub session_id: String,
+    pub memories: Vec<MemoryItem>,
+    pub total: u32,
+}
+
+// ============================================================================
+// Batch Operations DTOs (P1-2)
+// ============================================================================
+
+/// Batch add memories request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchAddRequest {
+    pub user_id: String,
+    #[serde(default)]
+    pub mem_cube_id: Option<String>,
+    pub memories: Vec<BatchMemoryContent>,
+    /// Processing mode: "parallel" or "sequential"
+    #[serde(default = "default_batch_mode")]
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchMemoryContent {
+    pub memory: String,
+    #[serde(default)]
+    pub metadata: Option<HashMap<String, serde_json::Value>>,
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
+fn default_batch_mode() -> String {
+    "parallel".to_string()
+}
+
+/// Batch add response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchAddResponse {
+    #[serde(default = "default_code")]
+    pub code: i32,
+    pub message: String,
+    #[serde(default)]
+    pub data: Option<BatchAddData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchAddData {
+    pub successful: Vec<BatchResult>,
+    pub failed: Vec<BatchFailure>,
+    pub total: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchResult {
+    pub memory_id: String,
+    pub index: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchFailure {
+    pub index: u32,
+    pub error: String,
+}
+
+/// Batch delete request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchDeleteRequest {
+    pub user_id: String,
+    #[serde(default)]
+    pub mem_cube_id: Option<String>,
+    pub memory_ids: Vec<String>,
+    #[serde(default)]
+    pub soft: bool,
+}
+
+/// Batch delete response.
+pub type BatchDeleteResponse = BatchAddResponse;
+
+/// Export request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportRequest {
+    pub user_id: String,
+    #[serde(default)]
+    pub mem_cube_id: Option<String>,
+    /// Scope to export: all, WorkingMemory, UserMemory, LongTermMemory
+    #[serde(default = "default_export_scope")]
+    pub scope: String,
+    /// Export format: json, jsonl
+    #[serde(default = "default_export_format")]
+    pub format: String,
+}
+
+fn default_export_scope() -> String {
+    "all".to_string()
+}
+fn default_export_format() -> String {
+    "json".to_string()
+}
+
+/// Export response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportResponse {
+    #[serde(default = "default_code")]
+    pub code: i32,
+    pub message: String,
+    #[serde(default)]
+    pub data: Option<ExportData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportData {
+    pub total_memories: u32,
+    pub data: String,
+}
+
+// ============================================================================
+// Memory Summary DTOs (P1-1)
+// ============================================================================
+
+/// Summarize memories request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SummarizeRequest {
+    pub user_id: String,
+    #[serde(default)]
+    pub mem_cube_id: Option<String>,
+    /// Memory IDs to summarize, or use session_id
+    #[serde(default)]
+    pub memory_ids: Option<Vec<String>>,
+    /// Session ID to summarize all memories in a session
+    #[serde(default)]
+    pub session_id: Option<String>,
+    /// Max words in summary
+    #[serde(default = "default_summary_max_words")]
+    pub max_words: u32,
+}
+
+fn default_summary_max_words() -> u32 {
+    200
+}
+
+/// Summarize response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SummarizeResponse {
+    #[serde(default = "default_code")]
+    pub code: i32,
+    pub message: String,
+    #[serde(default)]
+    pub data: Option<SummarizeData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SummarizeData {
+    pub summary: String,
+    pub summary_memory_id: String,
+    pub summarized_count: u32,
 }

@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(cargo check --all)",
-      "Bash(cargo check --package mem-embed)"
+      "Bash(cargo check --package mem-embed)",
+      "Bash(cargo check -p mem-cube)",
+      "Bash(cargo check -p mem-graph -p mem-vec --features \"mem-graph/sqlite,mem-vec/sqlite,mem-vec/qdrant\")",
+      "Bash(cargo check -p mem-graph --features \"mem-graph/sqlite\")",
+      "Bash(cargo check -p mem-vec --features \"mem-vec/sqlite\")",
+      "Bash(cargo check --features \"mem-graph/sqlite,mem-vec/sqlite,mem-vec/qdrant\")",
+      "Bash(cargo check -p mem-embed)",
+      "Bash(cargo check)",
+      "Bash(cargo check -p mem-types)",
+      "Bash(cargo check -p mem-api)"
     ]
   }
 }

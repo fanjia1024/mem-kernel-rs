@@ -355,6 +355,18 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/product/graph/path", post(handle_graph_path))
         .route("/product/graph/paths", post(handle_graph_paths))
         .route("/product/audit/list", get(handle_audit_list))
+        // P1-2: Batch operations
+        .route("/product/batch/add", post(handle_batch_add))
+        .route("/product/batch/delete", post(handle_batch_delete))
+        .route("/product/export", get(handle_export))
+        // P1-3: Session management
+        .route("/product/session/create", post(handle_create_session))
+        .route("/product/session/get", post(handle_get_session))
+        .route("/product/session/list", post(handle_list_sessions))
+        .route("/product/session/delete", post(handle_delete_session))
+        .route("/product/session/timeline", post(handle_session_timeline))
+        // P1-1: Memory summary
+        .route("/product/summarize", post(handle_summarize))
         .route_layer(middleware::from_fn_with_state(
             Arc::clone(&state),
             require_auth,
@@ -883,6 +895,185 @@ async fn handle_metrics() -> impl IntoResponse {
         metrics().render_prometheus(),
     )
         .into_response()
+}
+
+// ============================================================================
+// Batch Operations Handlers (P1-2)
+// ============================================================================
+
+async fn handle_batch_add(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<mem_types::BatchAddRequest>,
+) -> Json<mem_types::BatchAddResponse> {
+    match state.cube.add_memories_batch(&req).await {
+        Ok(resp) => Json(resp),
+        Err(e) => Json(mem_types::BatchAddResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
+}
+
+async fn handle_batch_delete(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<mem_types::BatchDeleteRequest>,
+) -> Json<mem_types::BatchDeleteResponse> {
+    match state.cube.delete_memories_batch(&req).await {
+        Ok(resp) => Json(resp),
+        Err(e) => Json(mem_types::BatchDeleteResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
+}
+
+async fn handle_export(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> Json<mem_types::ExportResponse> {
+    let user_id = params.get("user_id").cloned().unwrap_or_default();
+    let mem_cube_id = params.get("mem_cube_id").cloned();
+    let scope = params
+        .get("scope")
+        .cloned()
+        .unwrap_or_else(|| "all".to_string());
+    let format = params
+        .get("format")
+        .cloned()
+        .unwrap_or_else(|| "json".to_string());
+
+    let req = mem_types::ExportRequest {
+        user_id,
+        mem_cube_id,
+        scope,
+        format,
+    };
+
+    match state.cube.export_memories(&req).await {
+        Ok(resp) => Json(resp),
+        Err(e) => Json(mem_types::ExportResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
+}
+
+// ============================================================================
+// Session Management Handlers (P1-3)
+// ============================================================================
+
+async fn handle_create_session(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<mem_types::CreateSessionRequest>,
+) -> Json<mem_types::ListSessionsResponse> {
+    match state.cube.create_session(&req).await {
+        Ok(session) => Json(mem_types::ListSessionsResponse {
+            code: 200,
+            message: "Session created".to_string(),
+            data: Some(mem_types::ListSessionsData {
+                sessions: vec![session],
+                next_cursor: None,
+            }),
+        }),
+        Err(e) => Json(mem_types::ListSessionsResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
+}
+
+async fn handle_get_session(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<mem_types::GetMemoryResponse> {
+    let session_id = req.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+    let user_id = req.get("user_id").and_then(|v| v.as_str()).unwrap_or("");
+
+    match state.cube.get_session(session_id, user_id).await {
+        Ok(Some(session)) => Json(mem_types::GetMemoryResponse {
+            code: 200,
+            message: "Success".to_string(),
+            data: Some(mem_types::MemoryItem {
+                id: session.session_id,
+                memory: session.title.unwrap_or_default(),
+                metadata: session.metadata,
+            }),
+        }),
+        Ok(None) => Json(mem_types::GetMemoryResponse {
+            code: 404,
+            message: "Session not found".to_string(),
+            data: None,
+        }),
+        Err(e) => Json(mem_types::GetMemoryResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
+}
+
+async fn handle_list_sessions(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<mem_types::ListSessionsRequest>,
+) -> Json<mem_types::ListSessionsResponse> {
+    match state.cube.list_sessions(&req).await {
+        Ok(resp) => Json(resp),
+        Err(e) => Json(mem_types::ListSessionsResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
+}
+
+async fn handle_delete_session(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<mem_types::DeleteSessionRequest>,
+) -> Json<mem_types::MemoryResponse> {
+    match state.cube.delete_session(&req).await {
+        Ok(resp) => Json(resp),
+        Err(e) => Json(mem_types::MemoryResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
+}
+
+async fn handle_session_timeline(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<mem_types::SessionTimelineRequest>,
+) -> Json<mem_types::SessionTimelineResponse> {
+    match state.cube.session_timeline(&req).await {
+        Ok(resp) => Json(resp),
+        Err(e) => Json(mem_types::SessionTimelineResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
+}
+
+// ============================================================================
+// Memory Summary Handlers (P1-1)
+// ============================================================================
+
+async fn handle_summarize(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<mem_types::SummarizeRequest>,
+) -> Json<mem_types::SummarizeResponse> {
+    match state.cube.summarize_memories(&req).await {
+        Ok(resp) => Json(resp),
+        Err(e) => Json(mem_types::SummarizeResponse {
+            code: 500,
+            message: e.to_string(),
+            data: None,
+        }),
+    }
 }
 
 // ============================================================================

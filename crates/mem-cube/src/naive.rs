@@ -1,7 +1,7 @@
 //! NaiveMemCube: single MemCube with text_mem path.
 
 use chrono::Utc;
-use mem_embed::Embedder;
+use mem_embed::{Embedder, LLMClient};
 use mem_graph::GraphStore;
 use mem_types::*;
 use mem_vec::VecStore;
@@ -28,6 +28,10 @@ pub struct NaiveMemCube<G, V, E> {
     pub keyword_store: Option<Arc<dyn KeywordStore + Send + Sync>>,
     /// Optional reranker for hybrid search.
     pub reranker: Option<Arc<dyn Reranker + Send + Sync>>,
+    /// Optional LLM client for memory summarization (P1-1).
+    pub llm_client: Option<Arc<dyn LLMClient + Send + Sync>>,
+    /// Optional session store for session management (P1-3).
+    pub session_store: Option<Arc<dyn SessionStore + Send + Sync>>,
 }
 
 impl<G, V, E> NaiveMemCube<G, V, E>
@@ -44,6 +48,8 @@ where
             default_scope: "LongTermMemory".to_string(),
             keyword_store: None,
             reranker: None,
+            llm_client: None,
+            session_store: None,
         }
     }
 
@@ -59,6 +65,21 @@ where
         keyword_store: Option<Arc<dyn KeywordStore + Send + Sync>>,
     ) -> Self {
         self.keyword_store = keyword_store;
+        self
+    }
+
+    /// Attach an optional LLM client for memory summarization (P1-1).
+    pub fn with_llm_client(mut self, llm_client: Option<Arc<dyn LLMClient + Send + Sync>>) -> Self {
+        self.llm_client = llm_client;
+        self
+    }
+
+    /// Attach an optional session store for session management (P1-3).
+    pub fn with_session_store(
+        mut self,
+        session_store: Option<Arc<dyn SessionStore + Send + Sync>>,
+    ) -> Self {
+        self.session_store = session_store;
         self
     }
 
@@ -199,6 +220,40 @@ where
             ch.push(SearchChannel::Keyword);
         }
         ch
+    }
+
+    /// P0: Filter nodes by time range (since/until/time_range)
+    fn filter_nodes_by_time(nodes: Vec<MemoryNode>, req: &ApiSearchRequest) -> Vec<MemoryNode> {
+        // If no time filters, return all
+        if req.since.is_none() && req.until.is_none() && req.time_range.is_none() {
+            return nodes;
+        }
+
+        nodes
+            .into_iter()
+            .filter(|n| {
+                let created_at = n
+                    .metadata
+                    .get("created_at")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                // Handle time_range field
+                let (start, end) = if let Some(ref tr) = req.time_range {
+                    (Some(tr.start.as_str()), Some(tr.end.as_str()))
+                } else {
+                    (req.since.as_deref(), req.until.as_deref())
+                };
+
+                // Check start time
+                let passes_start = start.map(|s| created_at >= s).unwrap_or(true);
+
+                // Check end time
+                let passes_end = end.map(|e| created_at <= e).unwrap_or(true);
+
+                passes_start && passes_end
+            })
+            .collect()
     }
 }
 
@@ -409,6 +464,9 @@ where
             .get_nodes(&ids, false)
             .await
             .map_err(MemCubeError::Graph)?;
+
+        // P0: Apply time range filtering
+        let nodes = Self::filter_nodes_by_time(nodes, req);
 
         let memories: Vec<MemoryItem> = nodes
             .into_iter()
@@ -1168,6 +1226,605 @@ where
             code: 200,
             message: "Success".to_string(),
             data: Some(out),
+        })
+    }
+
+    // ============================================================================
+    // Batch Operations (P1-2)
+    // ============================================================================
+
+    async fn add_memories_batch(
+        &self,
+        req: &BatchAddRequest,
+    ) -> Result<BatchAddResponse, MemCubeError> {
+        let cube_ids = req
+            .mem_cube_id
+            .as_ref()
+            .map(|id| vec![id.clone()])
+            .unwrap_or_else(|| vec![req.user_id.clone()]);
+        let user_name = cube_ids.first().map(String::as_str).unwrap_or(&req.user_id);
+
+        let mut successful = Vec::new();
+        let mut failed = Vec::new();
+
+        // Parallel embedding generation
+        let contents: Vec<String> = req.memories.iter().map(|m| m.memory.clone()).collect();
+        let embeddings = match self.embedder.embed_batch(&contents).await {
+            Ok(emb) => emb,
+            Err(e) => {
+                return Ok(BatchAddResponse {
+                    code: 500,
+                    message: format!("embedding failed: {}", e),
+                    data: Some(BatchAddData {
+                        successful: vec![],
+                        failed: req
+                            .memories
+                            .iter()
+                            .enumerate()
+                            .map(|(i, _)| BatchFailure {
+                                index: i as u32,
+                                error: format!("embedding failed: {}", e),
+                            })
+                            .collect(),
+                        total: req.memories.len() as u32,
+                    }),
+                });
+            }
+        };
+
+        // Add each memory
+        for (idx, (content, emb)) in req.memories.iter().zip(embeddings).enumerate() {
+            let id = Uuid::new_v4().to_string();
+            let mut metadata = HashMap::new();
+            metadata.insert(
+                "scope".to_string(),
+                serde_json::Value::String(self.default_scope.clone()),
+            );
+            metadata.insert(
+                "created_at".to_string(),
+                serde_json::Value::String(Utc::now().to_rfc3339()),
+            );
+
+            if let Some(ref meta) = content.metadata {
+                for (k, v) in meta {
+                    metadata.insert(k.clone(), v.clone());
+                }
+            }
+
+            let scope = content.scope.as_deref().unwrap_or(&self.default_scope);
+            metadata.insert(
+                "scope".to_string(),
+                serde_json::Value::String(scope.to_string()),
+            );
+
+            let node = MemoryNode {
+                id: id.clone(),
+                memory: content.memory.clone(),
+                metadata: metadata.clone(),
+                embedding: Some(emb.clone()),
+            };
+
+            // Write to graph
+            if let Err(e) = self.graph.add_nodes_batch(&[node], Some(user_name)).await {
+                failed.push(BatchFailure {
+                    index: idx as u32,
+                    error: format!("graph error: {}", e),
+                });
+                continue;
+            }
+
+            // Write to vector store
+            let payload = {
+                let mut p = HashMap::new();
+                p.insert(
+                    "mem_cube_id".to_string(),
+                    serde_json::Value::String(user_name.to_string()),
+                );
+                p.insert(
+                    "memory_type".to_string(),
+                    serde_json::Value::String("text_mem".to_string()),
+                );
+                p.insert(
+                    "scope".to_string(),
+                    serde_json::Value::String(scope.to_string()),
+                );
+                p
+            };
+            let item = VecStoreItem {
+                id: id.clone(),
+                vector: emb,
+                payload,
+            };
+
+            if let Err(e) = self.vec_store.add(&[item], None).await {
+                let _ = self.graph.delete_node(&id, Some(user_name)).await;
+                failed.push(BatchFailure {
+                    index: idx as u32,
+                    error: format!("vector store error: {}", e),
+                });
+                continue;
+            }
+
+            // Index to keyword store if available
+            if let Some(ref kw) = self.keyword_store {
+                let _ = kw.index(&id, &content.memory, Some(user_name)).await;
+            }
+
+            successful.push(BatchResult {
+                memory_id: id,
+                index: idx as u32,
+            });
+        }
+
+        Ok(BatchAddResponse {
+            code: 200,
+            message: "Batch add completed".to_string(),
+            data: Some(BatchAddData {
+                successful,
+                failed,
+                total: req.memories.len() as u32,
+            }),
+        })
+    }
+
+    async fn delete_memories_batch(
+        &self,
+        req: &BatchDeleteRequest,
+    ) -> Result<BatchDeleteResponse, MemCubeError> {
+        let user_name = req.mem_cube_id.as_deref().unwrap_or(req.user_id.as_str());
+
+        let mut successful = Vec::new();
+        let mut failed = Vec::new();
+
+        for (idx, memory_id) in req.memory_ids.iter().enumerate() {
+            // Check ownership
+            let existing = self
+                .graph
+                .get_node(memory_id, false)
+                .await
+                .map_err(MemCubeError::Graph)?;
+            if let Some(node) = existing {
+                let node_owner = Self::node_owner(&node.metadata);
+                if node_owner != user_name {
+                    failed.push(BatchFailure {
+                        index: idx as u32,
+                        error: "memory not found".to_string(),
+                    });
+                    continue;
+                }
+            } else {
+                failed.push(BatchFailure {
+                    index: idx as u32,
+                    error: "memory not found".to_string(),
+                });
+                continue;
+            }
+
+            if req.soft {
+                // Soft delete
+                let mut fields = HashMap::new();
+                fields.insert(
+                    "state".to_string(),
+                    serde_json::Value::String("tombstone".to_string()),
+                );
+                fields.insert(
+                    "updated_at".to_string(),
+                    serde_json::Value::String(Utc::now().to_rfc3339()),
+                );
+                if let Err(e) = self
+                    .graph
+                    .update_node(memory_id, &fields, Some(user_name))
+                    .await
+                {
+                    failed.push(BatchFailure {
+                        index: idx as u32,
+                        error: format!("update error: {}", e),
+                    });
+                    continue;
+                }
+                let _ = self.vec_store.delete(&[memory_id.clone()], None).await;
+            } else {
+                // Hard delete
+                if let Err(e) = self.graph.delete_node(memory_id, Some(user_name)).await {
+                    failed.push(BatchFailure {
+                        index: idx as u32,
+                        error: format!("delete error: {}", e),
+                    });
+                    continue;
+                }
+                let _ = self.vec_store.delete(&[memory_id.clone()], None).await;
+            }
+
+            if let Some(ref kw) = self.keyword_store {
+                let _ = kw.remove(memory_id, Some(user_name)).await;
+            }
+
+            successful.push(BatchResult {
+                memory_id: memory_id.clone(),
+                index: idx as u32,
+            });
+        }
+
+        Ok(BatchDeleteResponse {
+            code: 200,
+            message: "Batch delete completed".to_string(),
+            data: Some(BatchAddData {
+                successful,
+                failed,
+                total: req.memory_ids.len() as u32,
+            }),
+        })
+    }
+
+    async fn export_memories(&self, req: &ExportRequest) -> Result<ExportResponse, MemCubeError> {
+        let user_name = req.mem_cube_id.as_deref().unwrap_or(req.user_id.as_str());
+
+        // Get all memories for this user
+        let all_nodes = self
+            .graph
+            .get_all_memory_items("all", user_name, false)
+            .await
+            .map_err(MemCubeError::Graph)?;
+
+        // Filter by scope if specified
+        let filtered: Vec<MemoryNode> = if req.scope == "all" {
+            all_nodes
+        } else {
+            all_nodes
+                .into_iter()
+                .filter(|n| {
+                    n.metadata
+                        .get("scope")
+                        .and_then(|v| v.as_str())
+                        .map(|s| {
+                            let normalized = s.to_lowercase().replace("memory", "");
+                            normalized == req.scope.to_lowercase()
+                        })
+                        .unwrap_or(false)
+                })
+                .collect()
+        };
+
+        // Convert to MemoryItem
+        let memories: Vec<MemoryItem> = filtered
+            .into_iter()
+            .map(|n| MemoryItem {
+                id: n.id,
+                memory: n.memory,
+                metadata: n.metadata,
+            })
+            .collect();
+
+        let total = memories.len() as u32;
+
+        // Serialize to requested format
+        let data = match req.format.as_str() {
+            "jsonl" => memories
+                .iter()
+                .map(|m| serde_json::to_string(m).unwrap_or_default())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            _ => {
+                // Default to JSON
+                serde_json::to_string(&memories).unwrap_or_default()
+            }
+        };
+
+        Ok(ExportResponse {
+            code: 200,
+            message: "Export completed".to_string(),
+            data: Some(ExportData {
+                total_memories: total,
+                data,
+            }),
+        })
+    }
+
+    // ============================================================================
+    // Session Management (P1-3)
+    // ============================================================================
+
+    async fn create_session(
+        &self,
+        req: &CreateSessionRequest,
+    ) -> Result<SessionResponse, MemCubeError> {
+        let session_store = self
+            .session_store
+            .as_ref()
+            .ok_or_else(|| MemCubeError::Other("session store not configured".to_string()))?;
+
+        let session = session_store
+            .create_session(&req.user_id, req.title.as_deref(), req.metadata.as_ref())
+            .await
+            .map_err(|e| MemCubeError::Other(e.to_string()))?;
+
+        Ok(SessionResponse {
+            session_id: session.session_id,
+            title: session.title,
+            memory_count: session.memory_count,
+            created_at: session.created_at,
+            updated_at: session.updated_at,
+            metadata: session.metadata,
+        })
+    }
+
+    async fn get_session(
+        &self,
+        session_id: &str,
+        user_id: &str,
+    ) -> Result<Option<SessionResponse>, MemCubeError> {
+        let session_store = self
+            .session_store
+            .as_ref()
+            .ok_or_else(|| MemCubeError::Other("session store not configured".to_string()))?;
+
+        let session = session_store
+            .get_session(session_id, user_id)
+            .await
+            .map_err(|e| MemCubeError::Other(e.to_string()))?;
+
+        Ok(session.map(|s| SessionResponse {
+            session_id: s.session_id,
+            title: s.title,
+            memory_count: s.memory_count,
+            created_at: s.created_at,
+            updated_at: s.updated_at,
+            metadata: s.metadata,
+        }))
+    }
+
+    async fn list_sessions(
+        &self,
+        req: &ListSessionsRequest,
+    ) -> Result<ListSessionsResponse, MemCubeError> {
+        let session_store = self
+            .session_store
+            .as_ref()
+            .ok_or_else(|| MemCubeError::Other("session store not configured".to_string()))?;
+
+        let (sessions, cursor) = session_store
+            .list_sessions(&req.user_id, req.limit, req.cursor.as_deref())
+            .await
+            .map_err(|e| MemCubeError::Other(e.to_string()))?;
+
+        Ok(ListSessionsResponse {
+            code: 200,
+            message: "Success".to_string(),
+            data: Some(ListSessionsData {
+                sessions: sessions
+                    .into_iter()
+                    .map(|s| SessionResponse {
+                        session_id: s.session_id,
+                        title: s.title,
+                        memory_count: s.memory_count,
+                        created_at: s.created_at,
+                        updated_at: s.updated_at,
+                        metadata: s.metadata,
+                    })
+                    .collect(),
+                next_cursor: cursor,
+            }),
+        })
+    }
+
+    async fn delete_session(
+        &self,
+        req: &DeleteSessionRequest,
+    ) -> Result<MemoryResponse, MemCubeError> {
+        let session_store = self
+            .session_store
+            .as_ref()
+            .ok_or_else(|| MemCubeError::Other("session store not configured".to_string()))?;
+
+        // Delete session
+        session_store
+            .delete_session(&req.session_id, &req.user_id)
+            .await
+            .map_err(|e| MemCubeError::Other(e.to_string()))?;
+
+        // Optionally delete all memories in the session
+        if req.delete_memories {
+            // Get all memories with this session_id and delete them
+            // This would require a full scan, which is inefficient
+            // In production, you'd want a more efficient approach
+            tracing::warn!("delete_memories not fully implemented for sessions");
+        }
+
+        Ok(MemoryResponse {
+            code: 200,
+            message: "Session deleted".to_string(),
+            data: Some(vec![serde_json::json!({ "session_id": req.session_id })]),
+        })
+    }
+
+    async fn session_timeline(
+        &self,
+        req: &SessionTimelineRequest,
+    ) -> Result<SessionTimelineResponse, MemCubeError> {
+        let user_name = &req.user_id;
+
+        // Get all memories for this user and filter by session_id
+        let all_nodes = self
+            .graph
+            .get_all_memory_items("all", user_name, false)
+            .await
+            .map_err(MemCubeError::Graph)?;
+
+        let filtered: Vec<MemoryNode> = all_nodes
+            .into_iter()
+            .filter(|n| {
+                n.metadata
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s == req.session_id)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        let total = filtered.len() as u32;
+
+        // Apply limit
+        let limited: Vec<MemoryItem> = filtered
+            .into_iter()
+            .take(req.limit as usize)
+            .map(|n| MemoryItem {
+                id: n.id,
+                memory: n.memory,
+                metadata: n.metadata,
+            })
+            .collect();
+
+        Ok(SessionTimelineResponse {
+            code: 200,
+            message: "Success".to_string(),
+            data: Some(SessionTimelineData {
+                session_id: req.session_id.clone(),
+                memories: limited,
+                total,
+            }),
+        })
+    }
+
+    // ============================================================================
+    // Memory Summary (P1-1)
+    // ============================================================================
+
+    async fn summarize_memories(
+        &self,
+        req: &SummarizeRequest,
+    ) -> Result<SummarizeResponse, MemCubeError> {
+        let llm_client = self
+            .llm_client
+            .as_ref()
+            .ok_or_else(|| MemCubeError::Other("LLM client not configured".to_string()))?;
+
+        let user_name = req.mem_cube_id.as_deref().unwrap_or(req.user_id.as_str());
+
+        // Get memories to summarize
+        let nodes = if let Some(ref memory_ids) = req.memory_ids {
+            self.graph
+                .get_nodes(memory_ids, false)
+                .await
+                .map_err(MemCubeError::Graph)?
+        } else if let Some(ref session_id) = req.session_id {
+            let all_nodes = self
+                .graph
+                .get_all_memory_items("all", user_name, false)
+                .await
+                .map_err(MemCubeError::Graph)?;
+            all_nodes
+                .into_iter()
+                .filter(|n| {
+                    n.metadata
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s == session_id)
+                        .unwrap_or(false)
+                })
+                .collect()
+        } else {
+            return Err(MemCubeError::BadRequest(
+                "need memory_ids or session_id".to_string(),
+            ));
+        };
+
+        if nodes.is_empty() {
+            return Err(MemCubeError::NotFound("no memories found".to_string()));
+        }
+
+        // Build prompt for summarization
+        let content = nodes
+            .iter()
+            .map(|n| n.memory.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+
+        let prompt = format!(
+            "请将以下记忆精简为不超过{}字的摘要，保留关键信息：\n\n{}",
+            req.max_words, content
+        );
+
+        // Call LLM
+        let summary = llm_client
+            .complete(&prompt)
+            .await
+            .map_err(|e| MemCubeError::Other(format!("LLM error: {}", e)))?;
+
+        // Save summary as a new memory
+        let id = Uuid::new_v4().to_string();
+        let embedding = self
+            .embedder
+            .embed(&summary)
+            .await
+            .map_err(MemCubeError::Embedder)?;
+
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "scope".to_string(),
+            serde_json::Value::String("LongTermMemory".to_string()),
+        );
+        metadata.insert(
+            "created_at".to_string(),
+            serde_json::Value::String(Utc::now().to_rfc3339()),
+        );
+        metadata.insert("is_summary".to_string(), serde_json::Value::Bool(true));
+        if let Some(ref session_id) = req.session_id {
+            metadata.insert(
+                "session_id".to_string(),
+                serde_json::Value::String(session_id.clone()),
+            );
+        }
+        metadata.insert(
+            "summarized_count".to_string(),
+            serde_json::Value::Number(nodes.len().into()),
+        );
+
+        let node = MemoryNode {
+            id: id.clone(),
+            memory: summary.clone(),
+            metadata: metadata.clone(),
+            embedding: Some(embedding.clone()),
+        };
+
+        self.graph
+            .add_nodes_batch(&[node], Some(user_name))
+            .await
+            .map_err(MemCubeError::Graph)?;
+
+        let payload = {
+            let mut p = HashMap::new();
+            p.insert(
+                "mem_cube_id".to_string(),
+                serde_json::Value::String(user_name.to_string()),
+            );
+            p.insert(
+                "memory_type".to_string(),
+                serde_json::Value::String("text_mem".to_string()),
+            );
+            p.insert(
+                "scope".to_string(),
+                serde_json::Value::String("LongTermMemory".to_string()),
+            );
+            p
+        };
+        let item = VecStoreItem {
+            id: id.clone(),
+            vector: embedding,
+            payload,
+        };
+        self.vec_store
+            .add(&[item], None)
+            .await
+            .map_err(MemCubeError::Vec)?;
+
+        Ok(SummarizeResponse {
+            code: 200,
+            message: "Summary created".to_string(),
+            data: Some(SummarizeData {
+                summary,
+                summary_memory_id: id,
+                summarized_count: nodes.len() as u32,
+            }),
         })
     }
 }
