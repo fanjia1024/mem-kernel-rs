@@ -3,8 +3,7 @@
 //! Provides a unified interface for extracting named entities from text.
 
 use async_trait::async_trait;
-use mem_types::{EntityType, ExtractionConfig, ExtractionResult, TextPosition};
-use std::error::Error;
+use mem_types::{EntityType, ExtractionConfig, ExtractionResult};
 
 /// Result of extracting entities from a single text.
 pub struct ExtractionOutput {
@@ -125,8 +124,8 @@ impl<E: EntityExtractor> EntityExtractor for CachedExtractor<E> {
         texts: &[String],
         config: ExtractionConfig,
     ) -> Result<Vec<ExtractionResult>, ExtractorError> {
-        // Pre-allocate by original index so output order matches input order
-        let mut results: Vec<Option<ExtractionResult>> = vec![None; texts.len()];
+        // Try to get from cache first
+        let mut results = Vec::with_capacity(texts.len());
         let mut missing_indices = Vec::new();
         let mut missing_texts = Vec::new();
 
@@ -135,7 +134,7 @@ impl<E: EntityExtractor> EntityExtractor for CachedExtractor<E> {
             {
                 let mut cache = self.cache.lock().unwrap();
                 if let Some(cached) = cache.get(&key) {
-                    results[i] = Some(cached.clone());
+                    results.push(cached.clone());
                 } else {
                     missing_indices.push(i);
                     missing_texts.push(text.clone());
@@ -143,13 +142,17 @@ impl<E: EntityExtractor> EntityExtractor for CachedExtractor<E> {
             }
         }
 
-        // Fetch missing results and fill by original index
+        // Fetch missing results
         if !missing_texts.is_empty() {
             let batch_results = self.inner.extract_batch(&missing_texts, config).await?;
 
             for (batch_idx, result) in batch_results.into_iter().enumerate() {
                 let original_idx = missing_indices[batch_idx];
-                results[original_idx] = Some(result.clone());
+                // Extend results array
+                while results.len() <= original_idx {
+                    results.push(result.clone());
+                }
+                results[original_idx] = result.clone();
 
                 // Add to cache
                 let key = format!("{:x}", md5::compute(&missing_texts[batch_idx]));
@@ -162,10 +165,7 @@ impl<E: EntityExtractor> EntityExtractor for CachedExtractor<E> {
             }
         }
 
-        Ok(results
-            .into_iter()
-            .map(|o| o.expect("all positions filled by cache or batch"))
-            .collect())
+        Ok(results)
     }
 
     fn supported_types(&self) -> Vec<EntityType> {

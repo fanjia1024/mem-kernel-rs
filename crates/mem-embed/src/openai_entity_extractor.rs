@@ -5,13 +5,12 @@
 use super::entity_extractor::{
     deduplicate_entities, filter_by_confidence, filter_by_types, ExtractorError,
 };
-use crate::entity_extractor::{EntityExtractor, ExtractionOutput};
+use crate::entity_extractor::EntityExtractor;
 use mem_types::ExtractionConfig;
-use mem_types::{EntityRelationType, ExtractedEntity, ExtractionResult};
+use mem_types::{ExtractedEntity, ExtractionResult};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// OpenAI-compatible entity extractor configuration.
 #[derive(Debug, Clone)]
@@ -95,6 +94,12 @@ Only output valid JSON, no additional text.
 pub struct OpenAiEntityExtractor {
     client: reqwest::Client,
     config: OpenAiExtractorConfig,
+}
+
+impl Default for OpenAiEntityExtractor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OpenAiEntityExtractor {
@@ -240,7 +245,7 @@ impl EntityExtractor for OpenAiEntityExtractor {
         filter_by_confidence(&mut entities, config.min_confidence);
         filter_by_types(
             &mut entities,
-            config.target_types.as_ref().map(|v| v.as_slice()),
+            config.target_types.as_deref(),
         );
 
         if config.enable_deduplication {
@@ -352,12 +357,14 @@ struct ChatRequest<'a> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
 enum ResponseFormat {
     JsonObject,
     JsonSchema { schema: serde_json::Value },
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct ChatResponse {
     choices: Vec<Choice>,
     usage: Option<Usage>,
@@ -374,6 +381,7 @@ struct Message {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct Usage {
     prompt_tokens: u32,
     completion_tokens: u32,
@@ -424,7 +432,7 @@ impl From<NerApiEntity> for ExtractedEntity {
         ExtractedEntity {
             text: api.text,
             normalized_text,
-            entity_type: mem_types::EntityType::from_str(&api.entity_type),
+            entity_type: api.entity_type.parse().unwrap(),
             position: mem_types::TextPosition::new(api.position.start, api.position.end),
             confidence: api.confidence,
         }
@@ -437,7 +445,7 @@ impl From<NerApiRelation> for mem_types::ExtractedRelation {
         mem_types::ExtractedRelation {
             source_text: api.source_text,
             target_text: api.target_text,
-            relation_type: EntityRelationType::from_str(&api.relation_type),
+            relation_type: api.relation_type.parse().unwrap(),
             confidence: api.confidence,
         }
     }

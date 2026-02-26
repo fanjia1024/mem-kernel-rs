@@ -1014,6 +1014,7 @@ pub struct EntityStatsData {
 }
 
 /// Convert internal Entity to API format.
+#[allow(dead_code)]
 fn entity_to_api(entity: &Entity) -> serde_json::Value {
     serde_json::json!({
         "id": entity.id,

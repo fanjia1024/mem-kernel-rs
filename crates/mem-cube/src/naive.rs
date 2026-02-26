@@ -347,6 +347,7 @@ where
 
         if let Some(ref kw) = self.keyword_store {
             if let Err(e) = kw.index(&id, &content, Some(user_name)).await {
+                #[allow(clippy::cloned_ref_to_slice_refs)]
                 let _ = self.vec_store.delete(&[id.clone()], None).await;
                 let _ = self.graph.delete_node(&id, Some(user_name)).await;
                 return Err(MemCubeError::Keyword(e));
@@ -640,9 +641,9 @@ where
                     keyword_score: scores.2,
                     graph_score: scores.1,
                     fused_score: fused,
-                    vector_norm: scores.0.map(|_| v_norm),
+                    vector_norm: scores.0,
                     keyword_norm: scores.2.map(|_| k_norm),
-                    graph_norm: scores.1.map(|_| g_norm),
+                    graph_norm: scores.1,
                     rerank_score: None,
                     channels: Self::channels_for_scores(scores.0, scores.1, scores.2),
                 })
@@ -656,7 +657,7 @@ where
         });
         let total_candidates = hits.len();
 
-        let (mut hits, rerank_used) = if let (Some(ref reranker), Some(ref rcfg)) =
+        let (hits, rerank_used) = if let (Some(reranker), Some(rcfg)) =
             (self.reranker.as_ref(), req.rerank_config.as_ref())
         {
             if rcfg.enabled && rcfg.model_url.is_some() && !hits.is_empty() {

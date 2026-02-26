@@ -115,7 +115,7 @@ impl<G, V, E> EntityAwareMemCube<G, V, E> {
             .await
             .map_err(|e| MemCubeError::Other(format!("Entity extraction failed: {}", e)))?;
 
-        let mut entity_kg = self.entity_kg.lock().await;
+        let entity_kg = self.entity_kg.lock().await;
 
         // Limit number of entities
         let entities: Vec<_> = result
@@ -153,6 +153,7 @@ impl<G, V, E> EntityAwareMemCube<G, V, E> {
     }
 
     /// Extract entities from a batch of memories.
+    #[allow(dead_code)]
     async fn extract_batch(&self, contents: &[(String, String)]) -> Result<(), MemCubeError>
     where
         G: GraphStore + Send + Sync,
@@ -173,9 +174,9 @@ impl<G, V, E> EntityAwareMemCube<G, V, E> {
             .await
             .map_err(|e| MemCubeError::Other(format!("Batch extraction failed: {}", e)))?;
 
-        let mut entity_kg = self.entity_kg.lock().await;
+        let entity_kg = self.entity_kg.lock().await;
 
-        for ((content, memory_id), result) in contents.iter().zip(results.iter()) {
+        for ((_content, memory_id), result) in contents.iter().zip(results.iter()) {
             let entities: Vec<_> = result
                 .entities
                 .iter()
@@ -223,44 +224,50 @@ where
             MemCubeError::Other("no messages or memory_content in request".to_string())
         })?;
 
-        // Perform entity extraction before adding to cube
-        let id_clone = Uuid::new_v4().to_string();
-        let memory_id = id_clone.clone();
-
-        // Add memory to inner cube
+        // Add memory to inner cube first so we get the real memory ID
         let response = self.inner.add_memories(req).await?;
 
-        if self.config.async_extraction {
-            let content = content.clone();
-            let extractor = self.extractor.clone();
-            let kg = self.entity_kg.clone();
-            let config = self.config.clone();
+        let memory_id = response
+            .data
+            .as_ref()
+            .and_then(|d| d.first())
+            .and_then(|o| o.get("id"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
 
-            tokio::spawn(async move {
-                if let Some(ref extractor) = extractor {
-                    if let Ok(result) = extractor.extract(&content, config.extraction_config).await
-                    {
-                        let mut kg = kg.lock().await;
-                        for entity in result
-                            .entities
-                            .into_iter()
-                            .take(config.max_entities_per_memory)
+        if let Some(memory_id) = memory_id {
+            if self.config.async_extraction {
+                let content = content.clone();
+                let extractor = self.extractor.clone();
+                let kg = self.entity_kg.clone();
+                let config = self.config.clone();
+
+                tokio::spawn(async move {
+                    if let Some(ref extractor) = extractor {
+                        if let Ok(result) = extractor.extract(&content, config.extraction_config).await
                         {
-                            let _ = kg.upsert_entity(&entity, &memory_id);
-                        }
-                        for relation in result.relations {
-                            let _ = kg.add_relation_by_name(
-                                &relation.source_text,
-                                &relation.target_text,
-                                relation.relation_type.clone(),
-                            );
+                            let kg = kg.lock().await;
+                            for entity in result
+                                .entities
+                                .into_iter()
+                                .take(config.max_entities_per_memory)
+                            {
+                                let _ = kg.upsert_entity(&entity, &memory_id);
+                            }
+                            for relation in result.relations {
+                                let _ = kg.add_relation_by_name(
+                                    &relation.source_text,
+                                    &relation.target_text,
+                                    relation.relation_type.clone(),
+                                );
+                            }
                         }
                     }
-                }
-            });
-        } else {
-            self.extract_and_index_entities(&content, &memory_id)
-                .await?;
+                });
+            } else {
+                self.extract_and_index_entities(&content, &memory_id)
+                    .await?;
+            }
         }
 
         Ok(response)
@@ -281,7 +288,7 @@ where
         if let Some(ref memory) = req.memory {
             // Get current entities for this memory
             let entity_kg = self.entity_kg.lock().await;
-            let current_entities = entity_kg.get_entities_for_memory(&req.memory_id);
+            let _current_entities = entity_kg.get_entities_for_memory(&req.memory_id);
 
             // Re-extract entities from new content
             if let Some(ref extractor) = self.extractor {
@@ -289,7 +296,7 @@ where
                     .extract(memory, self.config.extraction_config.clone())
                     .await
                 {
-                    let mut entity_kg = self.entity_kg.lock().await;
+                    let entity_kg = self.entity_kg.lock().await;
 
                     // Update each entity with the new memory association
                     for entity in result.entities {
@@ -319,7 +326,7 @@ where
 
         // Dissociate from each entity
         for entity_id in &entity_ids {
-            let mut entity_kg = self.entity_kg.lock().await;
+            let entity_kg = self.entity_kg.lock().await;
             entity_kg.dissociate_from_memory(entity_id, &memory_id);
         }
 

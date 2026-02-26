@@ -69,6 +69,7 @@ pub trait GraphStore: Send + Sync {
     ) -> Result<Vec<GraphNeighbor>, GraphStoreError>;
 
     /// Shortest path query between source and target by BFS hops.
+    #[allow(clippy::too_many_arguments)]
     async fn shortest_path(
         &self,
         source_id: &str,
@@ -81,6 +82,7 @@ pub trait GraphStore: Send + Sync {
     ) -> Result<Option<GraphPath>, GraphStoreError>;
 
     /// Enumerate top-k shortest simple paths by BFS hops.
+    #[allow(clippy::too_many_arguments)]
     async fn find_paths(
         &self,
         source_id: &str,

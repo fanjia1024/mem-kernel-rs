@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 /// Entity type enumeration covering common NER categories.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -54,10 +55,12 @@ impl std::fmt::Display for EntityType {
     }
 }
 
-impl EntityType {
+impl FromStr for EntityType {
+    type Err = std::convert::Infallible;
+
     /// Parse from string (case-insensitive).
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
             "person" | "per" => EntityType::Person,
             "organization" | "org" => EntityType::Organization,
             "location" | "loc" => EntityType::Location,
@@ -70,7 +73,7 @@ impl EntityType {
             "phone" | "tel" => EntityType::Phone,
             "url" | "link" => EntityType::Url,
             _ => EntityType::Custom(s.to_string()),
-        }
+        })
     }
 }
 
@@ -266,10 +269,12 @@ impl std::fmt::Display for EntityRelationType {
     }
 }
 
-impl EntityRelationType {
-    /// Parse from string.
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
+impl FromStr for EntityRelationType {
+    type Err = std::convert::Infallible;
+
+    /// Parse from string (case-insensitive).
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s.to_lowercase().as_str() {
             "part_of" | "partof" => EntityRelationType::PartOf,
             "works_at" | "worksat" | "employer" => EntityRelationType::WorksAt,
             "located_in" | "locatedin" => EntityRelationType::LocatedIn,
@@ -281,7 +286,7 @@ impl EntityRelationType {
             "member_of" | "memberof" => EntityRelationType::MemberOf,
             "founded_by" | "foundedby" => EntityRelationType::FoundedBy,
             _ => EntityRelationType::Custom(s.to_string()),
-        }
+        })
     }
 }
 
@@ -409,7 +414,7 @@ pub enum SearchChannel {
 }
 
 /// Search mode for hybrid search.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum HybridSearchMode {
     /// Only vector search.
@@ -419,15 +424,10 @@ pub enum HybridSearchMode {
     /// Only graph search.
     GraphOnly,
     /// Fuse all channels (vector + keyword + graph).
+    #[default]
     Fusion,
     /// Custom channel combination.
     Custom,
-}
-
-impl Default for HybridSearchMode {
-    fn default() -> Self {
-        Self::Fusion
-    }
 }
 
 /// Fusion weights for combining scores from different channels.

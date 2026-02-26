@@ -8,6 +8,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
+/// Map from relation type to target entity ids.
+type RelationMap = HashMap<EntityRelationType, HashSet<String>>;
+
 /// Entity Knowledge Graph - stores and manages entities and their relations.
 #[derive(Debug, Clone, Default)]
 pub struct EntityKnowledgeGraph {
@@ -18,7 +21,7 @@ pub struct EntityKnowledgeGraph {
     /// Type index: entity_type -> set of entity_ids
     type_index: Arc<RwLock<HashMap<EntityType, HashSet<String>>>>,
     /// Entity relations: source_id -> (relation_type -> set of target_ids)
-    relations: Arc<RwLock<HashMap<String, HashMap<EntityRelationType, HashSet<String>>>>>,
+    relations: Arc<RwLock<HashMap<String, RelationMap>>>,
     /// Entity to memories index: entity_id -> set of memory_ids
     memory_index: Arc<RwLock<HashMap<String, HashSet<String>>>>,
     /// Name variants index: variant -> entity_id
@@ -123,13 +126,13 @@ impl EntityKnowledgeGraph {
         let mut type_index = self.type_index.write().unwrap();
         type_index
             .entry(extracted.entity_type.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(id.clone());
 
         let mut memory_index = self.memory_index.write().unwrap();
         memory_index
             .entry(id.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(memory_id.to_string());
 
         let mut variant_index = self.variant_index.write().unwrap();
@@ -324,9 +327,9 @@ impl EntityKnowledgeGraph {
         let mut relations = self.relations.write().unwrap();
         relations
             .entry(source_id.to_string())
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(relation_type)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(target_id.to_string());
 
         Ok(())
@@ -424,10 +427,10 @@ impl EntityKnowledgeGraph {
         let mut memory_index = self.memory_index.write().unwrap();
         memory_index
             .entry(entity_id.to_string())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(memory_id.to_string());
 
-        if let Some(mut entity) = self.entities.write().unwrap().get_mut(entity_id) {
+        if let Some(entity) = self.entities.write().unwrap().get_mut(entity_id) {
             if !entity.memory_ids.contains(&memory_id.to_string()) {
                 entity.memory_ids.push(memory_id.to_string());
                 entity.metadata.occurrence_count += 1;
@@ -442,7 +445,7 @@ impl EntityKnowledgeGraph {
             ids.remove(memory_id);
         }
 
-        if let Some(mut entity) = self.entities.write().unwrap().get_mut(entity_id) {
+        if let Some(entity) = self.entities.write().unwrap().get_mut(entity_id) {
             entity.memory_ids.retain(|id| id != memory_id);
         }
     }
@@ -491,7 +494,7 @@ impl EntityKnowledgeGraph {
                 .write()
                 .unwrap()
                 .entry(entity_id.to_string())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(memory_id.to_string());
             Ok(())
         } else {
@@ -635,7 +638,7 @@ impl EntityKnowledgeGraph {
                 .write()
                 .unwrap()
                 .entry(entity.entity_type.clone())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(entity.id.clone());
 
             for variant in &entity.name_variants {
@@ -650,7 +653,7 @@ impl EntityKnowledgeGraph {
                     .write()
                     .unwrap()
                     .entry(entity.id.clone())
-                    .or_insert_with(HashSet::new)
+                    .or_default()
                     .insert(memory_id.clone());
             }
         }
@@ -661,9 +664,9 @@ impl EntityKnowledgeGraph {
                 .write()
                 .unwrap()
                 .entry(rel.source_id)
-                .or_insert_with(HashMap::new)
+                .or_default()
                 .entry(rel.relation_type)
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(rel.target_id);
         }
 

@@ -380,18 +380,13 @@ fn default_graph_top_k_paths() -> u32 {
 pub type GraphPathsResponse = BaseResponse<Vec<GraphPathData>>;
 
 /// Traversal direction for graph neighbor query.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum GraphDirection {
+    #[default]
     Outbound,
     Inbound,
     Both,
-}
-
-impl Default for GraphDirection {
-    fn default() -> Self {
-        Self::Outbound
-    }
 }
 
 /// Scope for memory (MemOS: WorkingMemory, LongTermMemory, UserMemory).
