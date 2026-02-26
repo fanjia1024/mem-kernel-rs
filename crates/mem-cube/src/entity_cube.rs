@@ -153,10 +153,7 @@ impl<G, V, E> EntityAwareMemCube<G, V, E> {
     }
 
     /// Extract entities from a batch of memories.
-    async fn extract_batch(
-        &self,
-        contents: &[(String, String)],
-    ) -> Result<(), MemCubeError>
+    async fn extract_batch(&self, contents: &[(String, String)]) -> Result<(), MemCubeError>
     where
         G: GraphStore + Send + Sync,
         V: VecStore + Send + Sync,
@@ -241,9 +238,14 @@ where
 
             tokio::spawn(async move {
                 if let Some(ref extractor) = extractor {
-                    if let Ok(result) = extractor.extract(&content, config.extraction_config).await {
+                    if let Ok(result) = extractor.extract(&content, config.extraction_config).await
+                    {
                         let mut kg = kg.lock().await;
-                        for entity in result.entities.into_iter().take(config.max_entities_per_memory) {
+                        for entity in result
+                            .entities
+                            .into_iter()
+                            .take(config.max_entities_per_memory)
+                        {
                             let _ = kg.upsert_entity(&entity, &memory_id);
                         }
                         for relation in result.relations {
@@ -257,7 +259,8 @@ where
                 }
             });
         } else {
-            self.extract_and_index_entities(&content, &memory_id).await?;
+            self.extract_and_index_entities(&content, &memory_id)
+                .await?;
         }
 
         Ok(response)
@@ -282,13 +285,18 @@ where
 
             // Re-extract entities from new content
             if let Some(ref extractor) = self.extractor {
-                if let Ok(result) = extractor.extract(memory, self.config.extraction_config.clone()).await {
+                if let Ok(result) = extractor
+                    .extract(memory, self.config.extraction_config.clone())
+                    .await
+                {
                     let mut entity_kg = self.entity_kg.lock().await;
 
                     // Update each entity with the new memory association
                     for entity in result.entities {
                         let normalized = entity_kg.normalize_name(&entity.text);
-                        if let Some(existing_id) = entity_kg.get_entity_id_by_normalized_name(&normalized) {
+                        if let Some(existing_id) =
+                            entity_kg.get_entity_id_by_normalized_name(&normalized)
+                        {
                             let _ = entity_kg.add_memory_to_entity(&existing_id, &req.memory_id);
                         }
                     }
@@ -409,5 +417,3 @@ where
 // ============================================================================
 // Import needed types
 // ============================================================================
-
-use uuid::Uuid;

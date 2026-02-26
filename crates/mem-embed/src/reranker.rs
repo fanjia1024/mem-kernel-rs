@@ -67,7 +67,10 @@ impl Reranker for HttpReranker {
         if !res.status().is_success() {
             let status = res.status();
             let text = res.text().await.unwrap_or_default();
-            return Err(RerankError::Other(format!("rerank API error {}: {}", status, text)));
+            return Err(RerankError::Other(format!(
+                "rerank API error {}: {}",
+                status, text
+            )));
         }
 
         let parsed: RerankApiResponse = res

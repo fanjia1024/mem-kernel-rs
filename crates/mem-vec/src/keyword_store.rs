@@ -80,8 +80,8 @@ impl UserIndex {
 
             for (doc_id, &tf) in postings {
                 let len = self.doc_length.get(doc_id).copied().unwrap_or(0) as f64;
-                let norm = (tf as f64 * (k1 + 1.0))
-                    / (tf as f64 + k1 * (1.0 - b + b * len / avg_len));
+                let norm =
+                    (tf as f64 * (k1 + 1.0)) / (tf as f64 + k1 * (1.0 - b + b * len / avg_len));
                 *doc_scores.entry(doc_id.clone()).or_insert(0.0) += idf * norm;
             }
         }
@@ -91,7 +91,11 @@ impl UserIndex {
             .filter(|(_, s)| *s >= min_score)
             .map(|(id, score)| KeywordSearchHit { id, score })
             .collect();
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         hits.truncate(top_k);
         hits
     }
@@ -136,7 +140,11 @@ impl KeywordStore for InMemoryKeywordStore {
         Ok(())
     }
 
-    async fn remove(&self, memory_id: &str, user_name: Option<&str>) -> Result<(), KeywordStoreError> {
+    async fn remove(
+        &self,
+        memory_id: &str,
+        user_name: Option<&str>,
+    ) -> Result<(), KeywordStoreError> {
         let key = Self::user_key(user_name);
         let mut guard = self.by_user.write().await;
         if let Some(idx) = guard.get_mut(&key) {

@@ -54,7 +54,10 @@ where
     }
 
     /// Attach an optional keyword store for hybrid search BM25 channel.
-    pub fn with_keyword_store(mut self, keyword_store: Option<Arc<dyn KeywordStore + Send + Sync>>) -> Self {
+    pub fn with_keyword_store(
+        mut self,
+        keyword_store: Option<Arc<dyn KeywordStore + Send + Sync>>,
+    ) -> Self {
         self.keyword_store = keyword_store;
         self
     }
@@ -94,7 +97,10 @@ where
 
     /// Resolves scope from request info, or returns default. Returns `BadRequest` if a scope
     /// is explicitly provided in info but is invalid or not a string (consistent with `update_memory`).
-    fn resolve_scope_or_error(req: &ApiAddRequest, default_scope: &str) -> Result<String, MemCubeError> {
+    fn resolve_scope_or_error(
+        req: &ApiAddRequest,
+        default_scope: &str,
+    ) -> Result<String, MemCubeError> {
         let info = req.info.as_ref();
         let scope_value = info.and_then(|i| i.get("scope").or_else(|| i.get("memory_scope")));
         match scope_value {
@@ -105,9 +111,7 @@ where
                 )),
                 Some(s) => Self::normalize_scope(s)
                     .map(str::to_string)
-                    .ok_or_else(|| {
-                        MemCubeError::BadRequest(format!("invalid scope value: {}", s))
-                    }),
+                    .ok_or_else(|| MemCubeError::BadRequest(format!("invalid scope value: {}", s))),
             },
         }
     }
@@ -126,10 +130,7 @@ where
         vector_hits: &[VecSearchHit],
         graph_hits: &[VecSearchHit],
         keyword_hits: &[(String, f64)],
-    ) -> (
-        Vec<HybridCandidate>,
-        Vec<ChannelResult>,
-    ) {
+    ) -> (Vec<HybridCandidate>, Vec<ChannelResult>) {
         use std::collections::HashMap;
         let mut by_id: HashMap<String, HybridCandidate> = HashMap::new();
         for h in vector_hits {
@@ -186,11 +187,7 @@ where
         (candidates, channel_results)
     }
 
-    fn channels_for_scores(
-        v: Option<f64>,
-        g: Option<f64>,
-        k: Option<f64>,
-    ) -> Vec<SearchChannel> {
+    fn channels_for_scores(v: Option<f64>, g: Option<f64>, k: Option<f64>) -> Vec<SearchChannel> {
         let mut ch = vec![];
         if v.is_some() {
             ch.push(SearchChannel::Vector);
@@ -498,7 +495,11 @@ where
         let query_vector = self.embedder.embed(&req.query).await?;
 
         let keyword_enabled = self.keyword_store.is_some()
-            && req.keyword_config.as_ref().map(|c| c.enabled).unwrap_or(true);
+            && req
+                .keyword_config
+                .as_ref()
+                .map(|c| c.enabled)
+                .unwrap_or(true);
 
         let (vector_hits, graph_hits, keyword_hits): (
             Vec<VecSearchHit>,
@@ -522,10 +523,9 @@ where
                 (vec![], g, vec![])
             }
             HybridSearchMode::KeywordOnly => {
-                let kw = self
-                    .keyword_store
-                    .as_ref()
-                    .ok_or_else(|| MemCubeError::Other("keyword-only search requires keyword store".to_string()))?;
+                let kw = self.keyword_store.as_ref().ok_or_else(|| {
+                    MemCubeError::Other("keyword-only search requires keyword store".to_string())
+                })?;
                 let k = kw
                     .search(&req.query, top_k, Some(user_name), Some(&filter))
                     .await?;
@@ -535,8 +535,10 @@ where
                 if keyword_enabled {
                     let kw = self.keyword_store.as_ref().unwrap();
                     let (v_res, g_res, k_res) = tokio::join!(
-                        self.vec_store.search(&query_vector, top_k, Some(&filter), None),
-                        self.graph.search_by_embedding(&query_vector, top_k, Some(user_name)),
+                        self.vec_store
+                            .search(&query_vector, top_k, Some(&filter), None),
+                        self.graph
+                            .search_by_embedding(&query_vector, top_k, Some(user_name)),
                         kw.search(&req.query, top_k, Some(user_name), Some(&filter)),
                     );
                     let v = v_res.map_err(MemCubeError::Vec)?;
@@ -545,8 +547,10 @@ where
                     (v, g, k)
                 } else {
                     let (v_res, g_res) = tokio::join!(
-                        self.vec_store.search(&query_vector, top_k, Some(&filter), None),
-                        self.graph.search_by_embedding(&query_vector, top_k, Some(user_name)),
+                        self.vec_store
+                            .search(&query_vector, top_k, Some(&filter), None),
+                        self.graph
+                            .search_by_embedding(&query_vector, top_k, Some(user_name)),
                     );
                     let v = v_res.map_err(MemCubeError::Vec)?;
                     let g = g_res.map_err(MemCubeError::Graph)?;
@@ -559,11 +563,8 @@ where
             .iter()
             .map(|h| (h.id.clone(), h.score))
             .collect();
-        let (candidates, channel_results) = Self::merge_hybrid_candidates(
-            &vector_hits,
-            &graph_hits,
-            &kw_pairs,
-        );
+        let (candidates, channel_results) =
+            Self::merge_hybrid_candidates(&vector_hits, &graph_hits, &kw_pairs);
 
         if candidates.is_empty() {
             let latency_ms = start.elapsed().as_millis() as u64;
@@ -625,7 +626,11 @@ where
                 let v_norm = scores.0.unwrap_or(0.0);
                 let g_norm = scores.1.unwrap_or(0.0);
                 let k_raw = scores.2.unwrap_or(0.0);
-                let k_norm = if keyword_scale > 0.0 { k_raw / keyword_scale } else { k_raw };
+                let k_norm = if keyword_scale > 0.0 {
+                    k_raw / keyword_scale
+                } else {
+                    k_raw
+                };
                 let fused = weights.0 * v_norm + weights.1 * k_norm + weights.2 * g_norm;
                 Some(HybridSearchHit {
                     memory_id: n.id.clone(),
@@ -635,16 +640,20 @@ where
                     keyword_score: scores.2,
                     graph_score: scores.1,
                     fused_score: fused,
-                    vector_norm: scores.0,
+                    vector_norm: scores.0.map(|_| v_norm),
                     keyword_norm: scores.2.map(|_| k_norm),
-                    graph_norm: scores.1,
+                    graph_norm: scores.1.map(|_| g_norm),
                     rerank_score: None,
                     channels: Self::channels_for_scores(scores.0, scores.1, scores.2),
                 })
             })
             .collect();
 
-        hits.sort_by(|a, b| b.fused_score.partial_cmp(&a.fused_score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| {
+            b.fused_score
+                .partial_cmp(&a.fused_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let total_candidates = hits.len();
 
         let (mut hits, rerank_used) = if let (Some(ref reranker), Some(ref rcfg)) =
@@ -655,7 +664,10 @@ where
                 let take = (rerank_top_k * 2).min(hits.len());
                 let candidates: Vec<_> = hits.iter().take(take).cloned().collect();
                 let ids: Vec<String> = candidates.iter().map(|h| h.memory_id.clone()).collect();
-                let docs: Vec<String> = candidates.iter().map(|h| h.memory_content.clone()).collect();
+                let docs: Vec<String> = candidates
+                    .iter()
+                    .map(|h| h.memory_content.clone())
+                    .collect();
                 match reranker
                     .rerank(&req.query, &ids, &docs, rcfg.rerank_top_k)
                     .await
@@ -821,10 +833,7 @@ where
         }
 
         if let Some(ref kw) = self.keyword_store {
-            let content = req
-                .memory
-                .as_deref()
-                .unwrap_or(&node.memory);
+            let content = req.memory.as_deref().unwrap_or(&node.memory);
             let _ = kw.index(id, content, Some(user_name)).await;
         }
 

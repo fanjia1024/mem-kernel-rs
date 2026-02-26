@@ -2,9 +2,7 @@
 //!
 //! Provides a simple in-memory graph structure for managing entities and their relations.
 
-use mem_types::{
-    Entity, EntityMetadata, EntityRelationType, EntityType, ExtractedEntity,
-};
+use mem_types::{Entity, EntityMetadata, EntityRelationType, EntityType, ExtractedEntity};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
@@ -168,7 +166,9 @@ impl EntityKnowledgeGraph {
         let entities = self.entities.read().unwrap();
 
         if let Some(ids) = type_index.get(&entity_type) {
-            ids.iter().filter_map(|id| entities.get(id).cloned()).collect()
+            ids.iter()
+                .filter_map(|id| entities.get(id).cloned())
+                .collect()
         } else {
             Vec::new()
         }
@@ -187,7 +187,11 @@ impl EntityKnowledgeGraph {
             .collect();
 
         // Sort by occurrence count
-        results.sort_by(|a, b| b.metadata.occurrence_count.cmp(&a.metadata.occurrence_count));
+        results.sort_by(|a, b| {
+            b.metadata
+                .occurrence_count
+                .cmp(&a.metadata.occurrence_count)
+        });
 
         results
     }
@@ -209,11 +213,17 @@ impl EntityKnowledgeGraph {
             let query_lower = query.to_lowercase();
             candidates.retain(|e| {
                 e.name.contains(&query_lower)
-                    || e.name_variants.iter().any(|v| v.to_lowercase().contains(&query_lower))
+                    || e.name_variants
+                        .iter()
+                        .any(|v| v.to_lowercase().contains(&query_lower))
             });
         }
 
-        candidates.sort_by(|a, b| b.metadata.occurrence_count.cmp(&a.metadata.occurrence_count));
+        candidates.sort_by(|a, b| {
+            b.metadata
+                .occurrence_count
+                .cmp(&a.metadata.occurrence_count)
+        });
         candidates.into_iter().take(limit as usize).collect()
     }
 
@@ -323,10 +333,7 @@ impl EntityKnowledgeGraph {
     }
 
     /// Get all relations for an entity.
-    pub fn get_relations(
-        &self,
-        entity_id: &str,
-    ) -> Vec<(EntityRelationType, Vec<Entity>)> {
+    pub fn get_relations(&self, entity_id: &str) -> Vec<(EntityRelationType, Vec<Entity>)> {
         let relations = self.relations.read().unwrap();
         let entities = self.entities.read().unwrap();
 
@@ -469,7 +476,11 @@ impl EntityKnowledgeGraph {
     }
 
     /// Add a memory id to an entity's memory_ids list and memory_index.
-    pub fn add_memory_to_entity(&self, entity_id: &str, memory_id: &str) -> Result<(), EntityKgError> {
+    pub fn add_memory_to_entity(
+        &self,
+        entity_id: &str,
+        memory_id: &str,
+    ) -> Result<(), EntityKgError> {
         let mut entities = self.entities.write().unwrap();
         if let Some(entity) = entities.get_mut(entity_id) {
             if !entity.memory_ids.contains(&memory_id.to_string()) {
@@ -504,7 +515,15 @@ impl EntityKnowledgeGraph {
         let mut name = name.trim().to_lowercase();
 
         // Remove common suffixes
-        let suffixes = ["inc.", "llc", "corp.", "corporation", "ltd.", "co.", "group"];
+        let suffixes = [
+            "inc.",
+            "llc",
+            "corp.",
+            "corporation",
+            "ltd.",
+            "co.",
+            "group",
+        ];
         for suffix in &suffixes {
             if let Some(idx) = name.find(&format!(" {}", suffix)) {
                 name = name[..idx].trim().to_string();
@@ -604,8 +623,14 @@ impl EntityKnowledgeGraph {
 
         // Load entities
         for entity in snapshot.entities {
-            self.entities.write().unwrap().insert(entity.id.clone(), entity.clone());
-            self.name_index.write().unwrap().insert(entity.name.clone(), entity.id.clone());
+            self.entities
+                .write()
+                .unwrap()
+                .insert(entity.id.clone(), entity.clone());
+            self.name_index
+                .write()
+                .unwrap()
+                .insert(entity.name.clone(), entity.id.clone());
             self.type_index
                 .write()
                 .unwrap()
@@ -614,7 +639,10 @@ impl EntityKnowledgeGraph {
                 .insert(entity.id.clone());
 
             for variant in &entity.name_variants {
-                self.variant_index.write().unwrap().insert(variant.clone(), entity.id.clone());
+                self.variant_index
+                    .write()
+                    .unwrap()
+                    .insert(variant.clone(), entity.id.clone());
             }
 
             for memory_id in &entity.memory_ids {

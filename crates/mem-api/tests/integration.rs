@@ -1326,8 +1326,14 @@ fn load_complex_memory_fixture() -> ComplexMemoryFixture {
                 profile.insert("name".to_string(), serde_json::Value::String(row.name));
                 profile.insert("city".to_string(), serde_json::Value::String(row.city));
                 profile.insert("job".to_string(), serde_json::Value::String(row.job));
-                profile.insert("language".to_string(), serde_json::Value::String(row.language));
-                profile.insert("timezone".to_string(), serde_json::Value::String(row.timezone));
+                profile.insert(
+                    "language".to_string(),
+                    serde_json::Value::String(row.language),
+                );
+                profile.insert(
+                    "timezone".to_string(),
+                    serde_json::Value::String(row.timezone),
+                );
             }
             "chat" => {
                 recent_chat.push(FixtureMessage {
@@ -1485,9 +1491,7 @@ async fn complex_dialogue_memory_returns_short_mid_long_term() {
             q.stage,
             q.scope
         );
-        assert!(memories
-            .iter()
-            .all(|m| m["metadata"]["scope"] == q.scope));
+        assert!(memories.iter().all(|m| m["metadata"]["scope"] == q.scope));
         assert!(memories.iter().any(|m| {
             m["memory"]
                 .as_str()

@@ -31,8 +31,7 @@ use uuid::Uuid;
 
 // Re-export entity types for use in routes
 pub use mem_types::{
-    Entity as EntityType_, EntityRelationType as EntityRelationType_,
-    EntityType as EntityTypeEnum,
+    Entity as EntityType_, EntityRelationType as EntityRelationType_, EntityType as EntityTypeEnum,
 };
 
 /// In-memory implementation of AuditStore (process lifetime only).
@@ -877,7 +876,10 @@ async fn handle_health() -> &'static str {
 async fn handle_metrics() -> impl IntoResponse {
     (
         StatusCode::OK,
-        [(header::CONTENT_TYPE, "text/plain; version=0.0.4".to_string())],
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4".to_string(),
+        )],
         metrics().render_prometheus(),
     )
         .into_response()

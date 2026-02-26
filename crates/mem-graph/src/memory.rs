@@ -73,11 +73,7 @@ impl InMemoryGraphStore {
         Self::add_edge_to_index(in_index, &edge.to, &edge.id);
     }
 
-    fn remove_edge_indexes(
-        edge: &MemoryEdge,
-        out_index: &mut EdgeIndex,
-        in_index: &mut EdgeIndex,
-    ) {
+    fn remove_edge_indexes(edge: &MemoryEdge, out_index: &mut EdgeIndex, in_index: &mut EdgeIndex) {
         Self::remove_edge_from_index(out_index, &edge.from, &edge.id);
         Self::remove_edge_from_index(in_index, &edge.to, &edge.id);
     }
@@ -383,12 +379,12 @@ impl GraphStore for InMemoryGraphStore {
 
         {
             let nodes = self.nodes.read().await;
-            let source = nodes.get(source_id).ok_or_else(|| {
-                GraphStoreError::Other(format!("node not found: {}", source_id))
-            })?;
-            let target = nodes.get(target_id).ok_or_else(|| {
-                GraphStoreError::Other(format!("node not found: {}", target_id))
-            })?;
+            let source = nodes
+                .get(source_id)
+                .ok_or_else(|| GraphStoreError::Other(format!("node not found: {}", source_id)))?;
+            let target = nodes
+                .get(target_id)
+                .ok_or_else(|| GraphStoreError::Other(format!("node not found: {}", target_id)))?;
             if let Some(un) = user_name {
                 if Self::owner_from_metadata(&source.metadata) != un
                     || Self::owner_from_metadata(&target.metadata) != un
@@ -559,12 +555,12 @@ impl GraphStore for InMemoryGraphStore {
 
         {
             let nodes = self.nodes.read().await;
-            let source = nodes.get(source_id).ok_or_else(|| {
-                GraphStoreError::Other(format!("node not found: {}", source_id))
-            })?;
-            let target = nodes.get(target_id).ok_or_else(|| {
-                GraphStoreError::Other(format!("node not found: {}", target_id))
-            })?;
+            let source = nodes
+                .get(source_id)
+                .ok_or_else(|| GraphStoreError::Other(format!("node not found: {}", source_id)))?;
+            let target = nodes
+                .get(target_id)
+                .ok_or_else(|| GraphStoreError::Other(format!("node not found: {}", target_id)))?;
             if let Some(un) = user_name {
                 if Self::owner_from_metadata(&source.metadata) != un
                     || Self::owner_from_metadata(&target.metadata) != un
@@ -915,9 +911,18 @@ mod tests {
             serde_json::Value::String("LongTermMemory".to_string()),
         );
 
-        store.add_node("n0", "root", &meta, Some("u1")).await.unwrap();
-        store.add_node("n1", "node1", &meta, Some("u1")).await.unwrap();
-        store.add_node("n2", "node2", &meta, Some("u1")).await.unwrap();
+        store
+            .add_node("n0", "root", &meta, Some("u1"))
+            .await
+            .unwrap();
+        store
+            .add_node("n1", "node1", &meta, Some("u1"))
+            .await
+            .unwrap();
+        store
+            .add_node("n2", "node2", &meta, Some("u1"))
+            .await
+            .unwrap();
 
         store
             .add_edges_batch(
@@ -1093,7 +1098,16 @@ mod tests {
             .unwrap();
 
         let paths = store
-            .find_paths("s", "t", Some("r"), GraphDirection::Outbound, 3, 2, false, Some("u1"))
+            .find_paths(
+                "s",
+                "t",
+                Some("r"),
+                GraphDirection::Outbound,
+                3,
+                2,
+                false,
+                Some("u1"),
+            )
             .await
             .unwrap();
         assert_eq!(paths.len(), 2);

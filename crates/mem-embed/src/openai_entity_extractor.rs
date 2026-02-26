@@ -148,8 +148,9 @@ Respond with JSON only.
     /// Parse the raw JSON response from the API.
     fn parse_response(&self, response: &str) -> Result<NerApiResponse, ExtractorError> {
         // Try to extract JSON from response
-        let json_str = extract_json_from_text(response)
-            .ok_or_else(|| ExtractorError::InvalidResponse("No JSON found in response".to_string()))?;
+        let json_str = extract_json_from_text(response).ok_or_else(|| {
+            ExtractorError::InvalidResponse("No JSON found in response".to_string())
+        })?;
 
         serde_json::from_str(json_str)
             .map_err(|e| ExtractorError::InvalidResponse(format!("JSON parse error: {}", e)))
@@ -206,8 +207,7 @@ impl EntityExtractor for OpenAiEntityExtractor {
                 .map_err(|e| ExtractorError::ApiError(e.to_string()))?;
             return Err(ExtractorError::ApiError(format!(
                 "API error {}: {}",
-                status,
-                body
+                status, body
             )));
         }
 
@@ -225,8 +225,11 @@ impl EntityExtractor for OpenAiEntityExtractor {
         let result = self.parse_response(content)?;
 
         // Convert API types to mem_types
-        let mut entities: Vec<ExtractedEntity> =
-            result.entities.into_iter().map(ExtractedEntity::from).collect();
+        let mut entities: Vec<ExtractedEntity> = result
+            .entities
+            .into_iter()
+            .map(ExtractedEntity::from)
+            .collect();
         let relations: Vec<mem_types::ExtractedRelation> = result
             .relations
             .into_iter()
@@ -235,7 +238,10 @@ impl EntityExtractor for OpenAiEntityExtractor {
 
         // Apply filters
         filter_by_confidence(&mut entities, config.min_confidence);
-        filter_by_types(&mut entities, config.target_types.as_ref().map(|v| v.as_slice()));
+        filter_by_types(
+            &mut entities,
+            config.target_types.as_ref().map(|v| v.as_slice()),
+        );
 
         if config.enable_deduplication {
             deduplicate_entities(&mut entities);

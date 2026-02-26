@@ -193,7 +193,11 @@ pub trait KeywordStore: Send + Sync {
     ) -> Result<(), KeywordStoreError>;
 
     /// Remove a document from the index.
-    async fn remove(&self, memory_id: &str, user_name: Option<&str>) -> Result<(), KeywordStoreError>;
+    async fn remove(
+        &self,
+        memory_id: &str,
+        user_name: Option<&str>,
+    ) -> Result<(), KeywordStoreError>;
 
     /// Search by query string; returns top-k (id, score) for the user/cube.
     async fn search(
@@ -296,7 +300,9 @@ pub trait MemCube: Send + Sync {
         req: &ApiHybridSearchRequest,
     ) -> Result<HybridSearchResponse, MemCubeError> {
         let _ = req;
-        Err(MemCubeError::Other("hybrid search not supported".to_string()))
+        Err(MemCubeError::Other(
+            "hybrid search not supported".to_string(),
+        ))
     }
 }
 
