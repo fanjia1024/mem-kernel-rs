@@ -129,7 +129,7 @@ impl VecStore for SqliteVecStore {
 
             let mut items = Vec::new();
             for row in rows {
-                let (id, vector_blob, payload_json) = row.map_err(|e| e)?;
+                let (id, vector_blob, payload_json) = row?;
                 let vector: Vec<f32> = serde_json::from_slice(&vector_blob).unwrap_or_default();
                 let payload: HashMap<String, serde_json::Value> =
                     serde_json::from_str(&payload_json).unwrap_or_default();

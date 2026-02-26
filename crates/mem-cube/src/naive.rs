@@ -1422,7 +1422,7 @@ where
                     });
                     continue;
                 }
-                let _ = self.vec_store.delete(&[memory_id.clone()], None).await;
+                let _ = self.vec_store.delete(std::slice::from_ref(memory_id), None).await;
             } else {
                 // Hard delete
                 if let Err(e) = self.graph.delete_node(memory_id, Some(user_name)).await {
@@ -1432,7 +1432,7 @@ where
                     });
                     continue;
                 }
-                let _ = self.vec_store.delete(&[memory_id.clone()], None).await;
+                let _ = self.vec_store.delete(std::slice::from_ref(memory_id), None).await;
             }
 
             if let Some(ref kw) = self.keyword_store {

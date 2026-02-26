@@ -5,7 +5,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use mem_types::GraphDirection;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 
 /// SQLite-backed graph store for persistence.
@@ -110,7 +110,7 @@ impl GraphStore for SqliteGraphStore {
                         node.id,
                         node.memory,
                         metadata_json,
-                        node.embedding.as_ref().map(|e| serde_json::to_vec(e).ok()).flatten(),
+                        node.embedding.as_ref().and_then(|e| serde_json::to_vec(e).ok()),
                         now,
                         now,
                     ],
@@ -167,8 +167,7 @@ impl GraphStore for SqliteGraphStore {
                 let metadata_json: String = row.get(2)?;
                 let embedding_blob: Option<Vec<u8>> = row.get(3)?;
                 let embedding = embedding_blob
-                    .map(|b| serde_json::from_slice(&b).ok())
-                    .flatten();
+                    .and_then(|b| serde_json::from_slice(&b).ok());
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -217,9 +216,7 @@ impl GraphStore for SqliteGraphStore {
             let rows = stmt.query_map(params.as_slice(), |row| {
                 let metadata_json: String = row.get(2)?;
                 let embedding_blob: Option<Vec<u8>> = row.get(3)?;
-                let embedding = embedding_blob
-                    .map(|b| serde_json::from_slice(&b).ok())
-                    .flatten();
+                let embedding = embedding_blob.and_then(|b| serde_json::from_slice(&b).ok());
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -230,7 +227,7 @@ impl GraphStore for SqliteGraphStore {
 
             let mut nodes = Vec::new();
             for row in rows {
-                let (id, memory, metadata_json, embedding) = row.map_err(|e| e)?;
+                let (id, memory, metadata_json, embedding) = row?;
                 let metadata: HashMap<String, serde_json::Value> =
                     serde_json::from_str(&metadata_json).unwrap_or_default();
                 nodes.push(MemoryNode {
@@ -295,14 +292,13 @@ impl GraphStore for SqliteGraphStore {
                                 .get::<_, Option<Vec<u8>>>(9)
                                 .ok()
                                 .flatten()
-                                .map(|b| serde_json::from_slice(&b).ok())
-                                .flatten(),
+                                .and_then(|b| serde_json::from_slice(&b).ok()),
                         };
                         Ok((edge, node, true))
                     })?;
 
                     for row in rows {
-                        let (edge, node, _) = row.map_err(|e| e)?;
+                        let (edge, node, _) = row?;
                         neighbors.push(GraphNeighbor { edge, node });
                     }
                 }
@@ -340,14 +336,13 @@ impl GraphStore for SqliteGraphStore {
                                 .get::<_, Option<Vec<u8>>>(9)
                                 .ok()
                                 .flatten()
-                                .map(|b| serde_json::from_slice(&b).ok())
-                                .flatten(),
+                                .and_then(|b| serde_json::from_slice(&b).ok()),
                         };
                         Ok((edge, node, false))
                     })?;
 
                     for row in rows {
-                        let (edge, node, _) = row.map_err(|e| e)?;
+                        let (edge, node, _) = row?;
                         neighbors.push(GraphNeighbor { edge, node });
                     }
                 }
@@ -483,8 +478,7 @@ impl GraphStore for SqliteGraphStore {
                 let metadata_json: String = row.get(2)?;
                 let embedding_blob: Option<Vec<u8>> = row.get(3)?;
                 let embedding = embedding_blob
-                    .map(|b| serde_json::from_slice(&b).ok())
-                    .flatten();
+                    .and_then(|b| serde_json::from_slice(&b).ok());
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -495,7 +489,7 @@ impl GraphStore for SqliteGraphStore {
 
             let mut nodes = Vec::new();
             for row in rows {
-                let (id, memory, metadata_json, embedding) = row.map_err(|e| e)?;
+                let (id, memory, metadata_json, embedding) = row?;
                 let metadata: HashMap<String, serde_json::Value> =
                     serde_json::from_str(&metadata_json).unwrap_or_default();
                 nodes.push(MemoryNode {
@@ -517,7 +511,7 @@ impl GraphStore for SqliteGraphStore {
         _user_name: Option<&str>,
     ) -> Result<(), GraphStoreError> {
         let id = id.to_string();
-        let now = chrono::Utc::now().to_rfc3339();
+        let _now = chrono::Utc::now().to_rfc3339();
 
         // Get existing node
         let existing = self.get_node(&id, false).await?;
@@ -578,13 +572,14 @@ impl GraphStore for SqliteGraphStore {
     }
 }
 
+#[allow(dead_code)]
 fn parse_edge_row(row: &rusqlite::Row, offset: usize) -> Result<MemoryEdge, rusqlite::Error> {
     let metadata_json: String = row.get(offset + 4).unwrap_or_default();
     let metadata: HashMap<String, serde_json::Value> =
         serde_json::from_str(&metadata_json).unwrap_or_default();
 
     Ok(MemoryEdge {
-        id: row.get(offset + 0)?,
+        id: row.get(offset)?,
         from: row.get(offset + 1)?,
         to: row.get(offset + 2)?,
         relation: row.get(offset + 3)?,
@@ -592,18 +587,17 @@ fn parse_edge_row(row: &rusqlite::Row, offset: usize) -> Result<MemoryEdge, rusq
     })
 }
 
+#[allow(dead_code)]
 fn parse_node_row(row: &rusqlite::Row, offset: usize) -> Result<MemoryNode, rusqlite::Error> {
     let metadata_json: String = row.get(offset + 2).unwrap_or_default();
     let embedding_blob: Option<Vec<u8>> = row.get(offset + 3).ok();
-    let embedding = embedding_blob
-        .map(|b| serde_json::from_slice(&b).ok())
-        .flatten();
+    let embedding = embedding_blob.and_then(|b| serde_json::from_slice(&b).ok());
 
     let metadata: HashMap<String, serde_json::Value> =
         serde_json::from_str(&metadata_json).unwrap_or_default();
 
     Ok(MemoryNode {
-        id: row.get(offset + 0)?,
+        id: row.get(offset)?,
         memory: row.get(offset + 1)?,
         metadata,
         embedding,
